@@ -1,0 +1,3 @@
+CREATE DATABASE IF NOT EXISTS fs_store;
+
+USE fs_store; 

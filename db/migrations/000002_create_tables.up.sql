@@ -1,0 +1,30 @@
+USE fs_store;
+
+-- Create files table
+CREATE TABLE IF NOT EXISTS `files` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(255) NOT NULL,
+  `size` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `status` ENUM('INITIALIZED', 'PROCESSING', 'FAILED', 'COMPLETED') NOT NULL DEFAULT 'INITIALIZED',
+  `total_chunks` INT UNSIGNED NOT NULL DEFAULT 0,
+  `completed_chunks` INT UNSIGNED DEFAULT 0,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_files_name` (`name`),
+  INDEX `idx_files_status` (`status`),
+  CHECK (`total_chunks` >= `completed_chunks`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Create file_chunks table
+CREATE TABLE IF NOT EXISTS `file_chunks` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `parent_id` BIGINT UNSIGNED NOT NULL,
+  `status` ENUM('INITIALIZED', 'PROCESSING', 'FAILED', 'COMPLETED') NOT NULL,
+  `file_path` VARCHAR(1024) NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX `idx_file_chunks_parent` (`parent_id`),
+  CONSTRAINT `fk_file_chunks_parent` FOREIGN KEY (`parent_id`) REFERENCES `files` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci; 
