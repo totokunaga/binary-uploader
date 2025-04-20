@@ -2,13 +2,14 @@ package command
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/tomoya.tokunaga/cli/internal/usecase"
 )
 
-// DeleteCommand creates a command to delete a file
+// DeleteCommand creates a command to delete a file from the server
 func DeleteCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete-file [file name]",
@@ -17,17 +18,21 @@ func DeleteCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fileName := args[0]
 
-			// Input validation
 			if fileName == "" {
 				return fmt.Errorf("file name cannot be empty")
 			}
 
-			// Create delete service
-			deleteService := usecase.NewDeleteService(cmd)
+			// Use just the filename part if a path was provided
+			fileName = filepath.Base(fileName)
+			if fileName == "" {
+				return fmt.Errorf("invalid file name")
+			}
 
-			// Execute deletion
-			if err := deleteService.DeleteFile(fileName); err != nil {
-				return fmt.Errorf("deletion failed: %w", err)
+			config := usecase.NewServiceConfig(cmd, 0, 0) // Chunk size and retries not needed for delete
+			deleteFileService := usecase.NewDeleteFileService(config)
+
+			if err := deleteFileService.Execute(fileName); err != nil {
+				return fmt.Errorf("delete failed: %w", err)
 			}
 
 			fmt.Printf("Successfully deleted %s\n", fileName)

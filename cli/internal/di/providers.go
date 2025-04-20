@@ -11,6 +11,7 @@ import (
 
 // Command type aliases to distinguish between different commands
 type UploadCommand *cobra.Command
+type EnhancedUploadCommand *cobra.Command
 type DeleteCommand *cobra.Command
 type ListCommand *cobra.Command
 

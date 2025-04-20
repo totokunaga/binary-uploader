@@ -48,7 +48,7 @@ bin-dir:
 
 cli: bin-dir
 	@echo "Building CLI tool locally..."
-	cd cli && go build -o ../bin/cli-tool ./cmd/cli
+	cd cli && go build -o ../bin/cli-tool ./cmd
 
 run-cli: cli
 	@echo "Running CLI tool..."
