@@ -43,6 +43,10 @@ logs:
 ps:
 	$(DOCKER_COMPOSE) ps
 
+wire:
+	pushd server/cmd && wire && popd
+	pushd cli/cmd && wire && popd
+
 bin-dir:
 	@mkdir -p bin
 

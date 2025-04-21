@@ -2,7 +2,7 @@ package entity
 
 const (
 	DefaultServerURL      = "http://localhost:18080"
-	DefaultChunkSize      = 1024 * 8 // 8 KiB
+	DefaultChunkSize      = 1024 * 32 // 32 KiB
 	DefaultRetries        = 3
 	DefaultMaxConcurrency = 5
 )

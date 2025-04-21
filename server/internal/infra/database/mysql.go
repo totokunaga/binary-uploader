@@ -7,8 +7,8 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 
-	"github.com/tomoya.tokunaga/server/internal/core/entity"
-	mysqldriver "github.com/tomoya.tokunaga/server/internal/interface/database/mysql"
+	"github.com/tomoya.tokunaga/server/internal/domain/entity"
+	mysqldriver "github.com/tomoya.tokunaga/server/internal/interface/repository/database"
 )
 
 // NewDB creates and initializes the database connection

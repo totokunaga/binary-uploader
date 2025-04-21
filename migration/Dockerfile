@@ -12,7 +12,7 @@ RUN go mod download
 COPY . .
 
 # Build the migration tool
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o migrate ./cmd/migrate
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o migrate ./cmd
 
 FROM alpine:latest
 

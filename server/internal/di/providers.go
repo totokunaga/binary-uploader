@@ -7,13 +7,13 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/google/wire"
-	"github.com/tomoya.tokunaga/server/internal/core/entity"
-	"github.com/tomoya.tokunaga/server/internal/core/repository"
+	"github.com/tomoya.tokunaga/server/internal/domain/entity"
+	"github.com/tomoya.tokunaga/server/internal/domain/repository"
 	"github.com/tomoya.tokunaga/server/internal/infra/database"
 	"github.com/tomoya.tokunaga/server/internal/interface/api/handler"
 	"github.com/tomoya.tokunaga/server/internal/interface/api/router"
-	mysqldriver "github.com/tomoya.tokunaga/server/internal/interface/database/mysql"
-	"github.com/tomoya.tokunaga/server/internal/interface/storage/filesystem"
+	db_repo "github.com/tomoya.tokunaga/server/internal/interface/repository/database"
+	fs_repo "github.com/tomoya.tokunaga/server/internal/interface/repository/storage"
 	"github.com/tomoya.tokunaga/server/internal/usecase"
 )
 
@@ -34,45 +34,61 @@ func DBProvider(config *entity.Config, logger *slog.Logger) (*gorm.DB, error) {
 	return database.NewDB(config, logger)
 }
 
-// FileRepositoryProvider provides the file repository implementation
+// ----------------------------------------------------------------
+// Repository Providers
+// ----------------------------------------------------------------
+
 func FileRepositoryProvider(db *gorm.DB) repository.FileRepository {
-	return mysqldriver.NewFileRepository(db)
+	return db_repo.NewFileRepository(db)
 }
 
-// FileChunkRepositoryProvider provides the file chunk repository implementation
 func FileChunkRepositoryProvider(db *gorm.DB) repository.FileChunkRepository {
-	return mysqldriver.NewFileChunkRepository(db)
+	return db_repo.NewFileChunkRepository(db)
 }
 
-// StorageRepositoryProvider provides the storage repository implementation
 func StorageRepositoryProvider() repository.StorageRepository {
-	return filesystem.NewStorageRepository()
+	return fs_repo.NewStorageRepository()
 }
 
-// FileUseCaseProvider provides the file use case implementation
-func FileUseCaseProvider(
-	fileRepo repository.FileRepository,
-	fileChunkRepo repository.FileChunkRepository,
-	storageRepo repository.StorageRepository,
-	config *entity.Config,
-) usecase.FileUseCase {
-	return usecase.NewFileUseCase(
-		fileRepo,
-		fileChunkRepo,
-		storageRepo,
-		config.BaseStorageDir,
-		config.UploadSizeLimit,
-	)
+// ----------------------------------------------------------------
+// Usecase Providers
+// ----------------------------------------------------------------
+
+func FileListUseCaseProvider(fileRepo repository.FileRepository) usecase.FileListUseCase {
+	return usecase.NewFileListUseCase(fileRepo)
 }
 
-// FileHandlerProvider provides the file handler implementation
-func FileHandlerProvider(fileUseCase usecase.FileUseCase, logger *slog.Logger) *handler.FileHandler {
-	return handler.NewFileHandler(fileUseCase, logger)
+func FileUploadUseCaseProvider(fileRepo repository.FileRepository, fileChunkRepo repository.FileChunkRepository, storageRepo repository.StorageRepository, config *entity.Config) usecase.FileUploadUseCase {
+	return usecase.NewFileUploadUseCase(fileRepo, fileChunkRepo, storageRepo, config.BaseStorageDir, config.UploadSizeLimit)
+}
+
+func FileDeleteUseCaseProvider(fileRepo repository.FileRepository, fileChunkRepo repository.FileChunkRepository, storageRepo repository.StorageRepository, config *entity.Config) usecase.FileDeleteUseCase {
+	return usecase.NewFileDeleteUseCase(fileRepo, fileChunkRepo, storageRepo, config.BaseStorageDir)
+}
+
+// ----------------------------------------------------------------
+// Handler Providers
+// ----------------------------------------------------------------
+
+func FileUploadHandlerProvider(fileUploadUseCase usecase.FileUploadUseCase, logger *slog.Logger) *handler.FileUploadHandler {
+	return handler.NewFileUploadHandler(fileUploadUseCase, logger)
+}
+
+func FileListHandlerProvider(fileListUseCase usecase.FileListUseCase, logger *slog.Logger) *handler.FileListHandler {
+	return handler.NewFileListHandler(fileListUseCase, logger)
+}
+
+func FileDeleteHandlerProvider(fileDeleteUseCase usecase.FileDeleteUseCase, logger *slog.Logger) *handler.FileDeleteHandler {
+	return handler.NewFileDeleteHandler(fileDeleteUseCase, logger)
 }
 
 // RouterProvider provides the router implementation
-func RouterProvider(fileHandler *handler.FileHandler) *router.Router {
-	r := router.NewRouter(fileHandler)
+func RouterProvider(
+	fileUploadHandler *handler.FileUploadHandler,
+	fileListHandler *handler.FileListHandler,
+	fileDeleteHandler *handler.FileDeleteHandler,
+) *router.Router {
+	r := router.NewRouter(fileUploadHandler, fileListHandler, fileDeleteHandler)
 	r.SetupRoutes()
 	return r
 }
@@ -82,10 +98,18 @@ var ServerProvider = wire.NewSet(
 	ConfigProvider,
 	LoggerProvider,
 	DBProvider,
+	// Repository
 	FileRepositoryProvider,
 	FileChunkRepositoryProvider,
 	StorageRepositoryProvider,
-	FileUseCaseProvider,
-	FileHandlerProvider,
+	// Usecase
+	FileListUseCaseProvider,
+	FileUploadUseCaseProvider,
+	FileDeleteUseCaseProvider,
+	// Handler
+	FileUploadHandlerProvider,
+	FileListHandlerProvider,
+	FileDeleteHandlerProvider,
+	// Router
 	RouterProvider,
 )
