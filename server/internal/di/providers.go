@@ -63,7 +63,7 @@ func FileUploadUseCaseProvider(fileRepo repository.FileRepository, fileChunkRepo
 }
 
 func FileDeleteUseCaseProvider(fileRepo repository.FileRepository, fileChunkRepo repository.FileChunkRepository, storageRepo repository.StorageRepository, config *entity.Config) usecase.FileDeleteUseCase {
-	return usecase.NewFileDeleteUseCase(fileRepo, fileChunkRepo, storageRepo, config.BaseStorageDir)
+	return usecase.NewFileDeleteUseCase(config, fileRepo, fileChunkRepo, storageRepo)
 }
 
 // ----------------------------------------------------------------

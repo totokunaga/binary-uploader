@@ -21,6 +21,9 @@ type FileChunkRepository interface {
 	// UpdateFileChunkStatus updates the status of a file chunk
 	UpdateFileChunkStatus(ctx context.Context, id uint64, status entity.FileChunkStatus) e.CustomError
 
+	// UpdateFileChunkStatusByParentID updates the status of a file chunk by parent ID
+	UpdateFileChunkStatusByParentID(ctx context.Context, parentID uint64, status entity.FileChunkStatus) e.CustomError
+
 	// GetFileChunksByParentID retrieves all file chunks for a given parent ID
 	GetFileChunksByParentID(ctx context.Context, parentID uint64) ([]entity.FileChunk, e.CustomError)
 

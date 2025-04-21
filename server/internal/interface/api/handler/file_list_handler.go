@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	handler_err "github.com/tomoya.tokunaga/server/internal/interface/api/handler/error"
 	"github.com/tomoya.tokunaga/server/internal/usecase"
 	"golang.org/x/exp/slog"
 )
@@ -28,7 +27,7 @@ func NewFileListHandler(fileListUseCase usecase.FileListUseCase, logger *slog.Lo
 func (h *FileListHandler) Execute(ctx *gin.Context) {
 	files, err := h.fileListUseCase.Execute(ctx.Request.Context())
 	if err != nil {
-		ctx.JSON(err.StatusCode(), handler_err.GetErrorResponse(err, h.logger))
+		ctx.JSON(err.StatusCode(), getErrorResponse(err, h.logger))
 		return
 	}
 

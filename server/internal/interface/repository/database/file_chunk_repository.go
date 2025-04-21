@@ -83,6 +83,15 @@ func (r *fileChunkRepository) UpdateFileChunkStatus(ctx context.Context, id uint
 	return nil
 }
 
+// UpdateFileChunkStatusByParentID updates the status of all file chunks for a given parent ID
+func (r *fileChunkRepository) UpdateFileChunkStatusByParentID(ctx context.Context, parentID uint64, status entity.FileChunkStatus) e.CustomError {
+	if err := r.db.WithContext(ctx).Model(&FileChunkModel{}).Where("parent_id = ?", parentID).Update("status", string(status)).Error; err != nil {
+		return e.NewDatabaseError(err, "failed to update file chunk status")
+	}
+
+	return nil
+}
+
 // GetFileChunksByParentID retrieves all file chunks for a given parent ID
 func (r *fileChunkRepository) GetFileChunksByParentID(ctx context.Context, parentID uint64) ([]entity.FileChunk, e.CustomError) {
 	var models []FileChunkModel

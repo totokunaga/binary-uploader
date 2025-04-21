@@ -23,6 +23,9 @@ type Config struct {
 	DBPassword    string
 	DBName        string
 	DBConnTimeout int
+
+	// Worker pool config
+	WorkerPoolSize int
 }
 
 // NewConfig loads configuration from environment variables
@@ -43,6 +46,9 @@ func NewConfig() *Config {
 		DBPassword:    GetEnv("DB_PASSWORD", ""),
 		DBName:        GetEnv("DB_NAME", "fs_store"),
 		DBConnTimeout: GetEnvInt("DB_CONN_TIMEOUT", 10), // seconds
+
+		// Worker pool config
+		WorkerPoolSize: GetEnvInt("WORKER_POOL_SIZE", 5),
 	}
 }
 

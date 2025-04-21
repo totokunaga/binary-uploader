@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/tomoya.tokunaga/server/internal/domain/entity" // Assuming entity package exists
 	e "github.com/tomoya.tokunaga/server/internal/domain/entity/error"
 	"github.com/tomoya.tokunaga/server/internal/domain/repository"
+	"github.com/tomoya.tokunaga/server/internal/util/concurrency"
 )
 
 type FileDeleteUseCase interface {
@@ -14,24 +16,24 @@ type FileDeleteUseCase interface {
 }
 
 type fileDeleteUseCase struct {
-	fileRepo       repository.FileRepository
-	fileChunkRepo  repository.FileChunkRepository
-	storageRepo    repository.StorageRepository
-	baseStorageDir string
+	config        *entity.Config
+	fileRepo      repository.FileRepository
+	fileChunkRepo repository.FileChunkRepository
+	storageRepo   repository.StorageRepository
 }
 
-func NewFileDeleteUseCase(fileRepo repository.FileRepository, fileChunkRepo repository.FileChunkRepository, storageRepo repository.StorageRepository, baseStorageDir string) FileDeleteUseCase {
+func NewFileDeleteUseCase(config *entity.Config, fileRepo repository.FileRepository, fileChunkRepo repository.FileChunkRepository, storageRepo repository.StorageRepository) FileDeleteUseCase {
 	return &fileDeleteUseCase{
-		fileRepo:       fileRepo,
-		fileChunkRepo:  fileChunkRepo,
-		storageRepo:    storageRepo,
-		baseStorageDir: baseStorageDir,
+		config:        config,
+		fileRepo:      fileRepo,
+		fileChunkRepo: fileChunkRepo,
+		storageRepo:   storageRepo,
 	}
 }
 
 // Execute deletes a file
 func (uc *fileDeleteUseCase) Execute(ctx context.Context, fileName string) e.CustomError {
-	// Get the file
+	// Checks if the file to delete exists
 	file, err := uc.fileRepo.GetFileByName(ctx, fileName)
 	if err != nil {
 		return err
@@ -40,22 +42,32 @@ func (uc *fileDeleteUseCase) Execute(ctx context.Context, fileName string) e.Cus
 		return e.NewInvalidInputError(nil, fmt.Sprintf("%s not found", fileName))
 	}
 
-	// Get all file chunks
+	// Update the status of file and file chunks to DELETE_IN_PROGRESS before deleting repository record
+	if err := uc.fileRepo.UpdateFileStatus(ctx, file.ID, entity.FileStatusDeleteInProgress); err != nil {
+		return err
+	}
+	if err := uc.fileChunkRepo.UpdateFileChunkStatusByParentID(ctx, file.ID, entity.FileChunkStatusDeleteInProgress); err != nil {
+		return err
+	}
+
+	// Delete all file chunks from storage
 	chunks, err := uc.fileChunkRepo.GetFileChunksByParentID(ctx, file.ID)
 	if err != nil {
 		return err
 	}
 
-	// TODO: update chunk status to DELETE_IN_PROGRESS
+	// Use worker wp for parallel chunk deletion
+	wp := concurrency.NewWorkerPool(uc.config.WorkerPoolSize)
+	wp.Start(ctx)
 
-	// Delete all file chunks
 	for _, chunk := range chunks {
-		if err := uc.storageRepo.DeleteChunk(ctx, chunk.FilePath); err != nil {
-			// Log error but continue deleting other chunks
-			// We want to clean up as much as possible
-			fmt.Printf("failed to delete chunk %s: %v\n", chunk.FilePath, err)
-		}
+		chunkPath := chunk.FilePath // use closure to capture loop variable
+		wp.Submit(func() error {
+			_ = uc.storageRepo.DeleteChunk(ctx, chunkPath)
+			return nil
+		})
 	}
+	wp.Wait()
 
 	// Delete the file chunks from the repository
 	// TODO: update chunk status to DELETED and a batch job will take care of the rest (avoid index calculation overhead)
@@ -64,11 +76,10 @@ func (uc *fileDeleteUseCase) Execute(ctx context.Context, fileName string) e.Cus
 	}
 
 	// Delete the file directory
-	// Actual deletion is done by a batch job
-	fileDirPath := filepath.Join(uc.baseStorageDir, fileName)
+	// TODO: Actual deletion is done by a batch job
+	fileDirPath := filepath.Join(uc.config.BaseStorageDir, fileName)
 	if err := uc.storageRepo.DeleteDirectory(ctx, fileDirPath); err != nil {
-		// Log error but continue
-		fmt.Printf("failed to delete directory %s: %v\n", fileDirPath, err)
+		return err
 	}
 
 	// Delete the file from the repository

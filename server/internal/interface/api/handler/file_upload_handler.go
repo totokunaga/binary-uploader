@@ -8,7 +8,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	e "github.com/tomoya.tokunaga/server/internal/domain/entity/error"
-	handler_err "github.com/tomoya.tokunaga/server/internal/interface/api/handler/error"
 	"github.com/tomoya.tokunaga/server/internal/usecase"
 	"golang.org/x/exp/slog"
 )
@@ -43,7 +42,7 @@ func (h *FileUploadHandler) ExecuteInit(ctx *gin.Context) {
 	// Get the file name from the URL
 	fileName := ctx.Param("file_name")
 	if fileName == "" {
-		ctx.JSON(http.StatusBadRequest, handler_err.GetErrorResponse(
+		ctx.JSON(http.StatusBadRequest, getErrorResponse(
 			e.NewInvalidInputError(errors.New("file_name parameter is required"), ""),
 			h.logger,
 		))
@@ -53,7 +52,7 @@ func (h *FileUploadHandler) ExecuteInit(ctx *gin.Context) {
 	// Parse the request body
 	var req InitUploadRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, handler_err.GetErrorResponse(
+		ctx.JSON(http.StatusBadRequest, getErrorResponse(
 			e.NewInvalidInputError(err, "invalid request body"),
 			h.logger,
 		))
@@ -63,7 +62,7 @@ func (h *FileUploadHandler) ExecuteInit(ctx *gin.Context) {
 	// Initialize the upload
 	uploadID, err := h.fileUploadUseCase.ExecuteInit(ctx.Request.Context(), fileName, req.TotalSize, req.TotalChunks)
 	if err != nil {
-		ctx.JSON(err.StatusCode(), handler_err.GetErrorResponse(err, h.logger))
+		ctx.JSON(err.StatusCode(), getErrorResponse(err, h.logger))
 		return
 	}
 
@@ -79,7 +78,7 @@ func (h *FileUploadHandler) Execute(ctx *gin.Context) {
 
 	uploadID, err := strconv.ParseUint(uploadIDStr, 10, 64)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, handler_err.GetErrorResponse(
+		ctx.JSON(http.StatusBadRequest, getErrorResponse(
 			e.NewInvalidInputError(err, fmt.Sprintf("invalid upload ID: %s", uploadIDStr)),
 			h.logger,
 		))
@@ -88,7 +87,7 @@ func (h *FileUploadHandler) Execute(ctx *gin.Context) {
 
 	chunkID, err := strconv.ParseUint(chunkIDStr, 10, 64)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, handler_err.GetErrorResponse(
+		ctx.JSON(http.StatusBadRequest, getErrorResponse(
 			e.NewInvalidInputError(err, fmt.Sprintf("invalid chunk ID: %s", chunkIDStr)),
 			h.logger,
 		))
@@ -98,20 +97,17 @@ func (h *FileUploadHandler) Execute(ctx *gin.Context) {
 	// Get the file content from the request
 	file, err := ctx.FormFile("file")
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, handler_err.GetErrorResponse(
+		ctx.JSON(http.StatusBadRequest, getErrorResponse(
 			e.NewInvalidInputError(err, "file is required"),
 			h.logger,
 		))
 		return
 	}
 
-	// Open the file // TODO: can be at the usecase layer?
+	// Open the file
 	src, err := file.Open()
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, handler_err.GetErrorResponse(
-			e.NewFileStorageError(err, "failed to open file"),
-			h.logger,
-		))
+		ctx.JSON(http.StatusInternalServerError, getErrorResponse(e.NewInvalidInputError(err, "failed to open file"), h.logger))
 		return
 	}
 	defer src.Close()
@@ -119,7 +115,7 @@ func (h *FileUploadHandler) Execute(ctx *gin.Context) {
 	// Upload the chunk
 	ucErr := h.fileUploadUseCase.Execute(ctx.Request.Context(), uploadID, uint(chunkID), src)
 	if ucErr != nil {
-		ctx.JSON(ucErr.StatusCode(), handler_err.GetErrorResponse(ucErr, h.logger))
+		ctx.JSON(ucErr.StatusCode(), getErrorResponse(ucErr, h.logger))
 		return
 	}
 

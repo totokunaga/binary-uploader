@@ -6,7 +6,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	e "github.com/tomoya.tokunaga/server/internal/domain/entity/error"
-	handler_err "github.com/tomoya.tokunaga/server/internal/interface/api/handler/error"
 	"github.com/tomoya.tokunaga/server/internal/usecase"
 	"golang.org/x/exp/slog"
 )
@@ -32,7 +31,7 @@ func (h *FileDeleteHandler) Execute(ctx *gin.Context) {
 	// Get the file name from the URL
 	fileName := ctx.Param("file_name")
 	if fileName == "" {
-		ctx.JSON(http.StatusBadRequest, handler_err.GetErrorResponse(
+		ctx.JSON(http.StatusBadRequest, getErrorResponse(
 			e.NewInvalidInputError(errors.New("file_name parameter is required"), ""),
 			h.logger,
 		))
@@ -42,7 +41,7 @@ func (h *FileDeleteHandler) Execute(ctx *gin.Context) {
 	// Delete the file
 	err := h.fileDeleteUseCase.Execute(ctx.Request.Context(), fileName)
 	if err != nil {
-		ctx.JSON(err.StatusCode(), handler_err.GetErrorResponse(err, h.logger))
+		ctx.JSON(err.StatusCode(), getErrorResponse(err, h.logger))
 		return
 	}
 
