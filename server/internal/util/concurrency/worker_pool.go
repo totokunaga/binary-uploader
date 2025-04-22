@@ -66,29 +66,3 @@ func (wp *WorkerPool) Wait() {
 func (wp *WorkerPool) Errors() <-chan error {
 	return wp.errChan
 }
-
-// Example usage:
-//
-// func main() {
-//     ctx := context.Background()
-//     pool := NewWorkerPool(5)
-//     pool.Start(ctx)
-//
-//     // Submit tasks
-//     for i := 0; i < 10; i++ {
-//         i := i // Capture for closure
-//         pool.Submit(func() error {
-//             // Do work
-//             return nil
-//         })
-//     }
-//
-//     // Process errors
-//     go func() {
-//         for err := range pool.Errors() {
-//             log.Println("Error:", err)
-//         }
-//     }()
-//
-//     pool.Stop()
-// }

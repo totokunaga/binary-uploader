@@ -18,7 +18,7 @@ func NewContextError(err error, errMsg string) *ContextError {
 }
 
 func (e *ContextError) Error() string {
-	return e.errMsg
+	return fmt.Sprintf("%s: %v", e.errMsg, e.err)
 }
 
 func (e *ContextError) ErrorObject() error {

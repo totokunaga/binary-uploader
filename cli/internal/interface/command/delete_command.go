@@ -6,11 +6,27 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/tomoya.tokunaga/cli/internal/domain/entity"
 	"github.com/tomoya.tokunaga/cli/internal/usecase"
 )
 
-// DeleteCommand creates a command to delete a file from the server
-func DeleteCommand() *cobra.Command {
+type DeleteCommandHandler struct {
+	config        *entity.Config
+	deleteUsecase *usecase.DeleteUsecase
+}
+
+func NewDeleteCommandHandler(
+	config *entity.Config,
+	deleteUsecase *usecase.DeleteUsecase,
+) *DeleteCommandHandler {
+	return &DeleteCommandHandler{
+		config:        config,
+		deleteUsecase: deleteUsecase,
+	}
+}
+
+// Execute creates a command to delete a file from the file server
+func (h *DeleteCommandHandler) Execute() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete-file [file name]",
 		Short: "Delete a file from the file server",
@@ -28,10 +44,7 @@ func DeleteCommand() *cobra.Command {
 				return fmt.Errorf("invalid file name")
 			}
 
-			config := usecase.NewServiceConfig(cmd, 0, 0) // Chunk size and retries not needed for delete
-			deleteFileService := usecase.NewDeleteFileService(config)
-
-			if err := deleteFileService.Execute(fileName); err != nil {
+			if err := h.deleteUsecase.Execute(fileName); err != nil {
 				return fmt.Errorf("delete failed: %w", err)
 			}
 

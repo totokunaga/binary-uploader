@@ -1,24 +1,24 @@
 package entity
 
 const (
-	DefaultServerURL      = "http://localhost:18080"
+	DefaultServerURL      = "http://localhost:38080"
 	DefaultChunkSize      = 1024 * 32 // 32 KiB
 	DefaultRetries        = 3
 	DefaultMaxConcurrency = 5
 )
 
-type ServiceConfig struct {
+type Config struct {
 	ServerURL      string
 	ChunkSize      int64
 	Retries        int
 	MaxConcurrency int
 }
 
-func NewServiceConfig(serverOrigin string, chunkSize int64, retries int, maxConcurrency int) *ServiceConfig {
-	return &ServiceConfig{
-		ServerURL:      serverOrigin,
-		ChunkSize:      chunkSize,
-		Retries:        retries,
-		MaxConcurrency: maxConcurrency,
+func NewServiceConfig() *Config {
+	return &Config{
+		ServerURL:      DefaultServerURL,
+		ChunkSize:      DefaultChunkSize,
+		Retries:        DefaultRetries,
+		MaxConcurrency: DefaultMaxConcurrency,
 	}
 }

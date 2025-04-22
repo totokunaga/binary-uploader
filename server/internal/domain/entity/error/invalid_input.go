@@ -18,7 +18,7 @@ func NewInvalidInputError(err error, errMsg string) *InvalidInputError {
 }
 
 func (e *InvalidInputError) Error() string {
-	return e.errMsg
+	return fmt.Sprintf("%s: %v", e.errMsg, e.err)
 }
 
 func (e *InvalidInputError) ErrorObject() error {

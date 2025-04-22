@@ -13,20 +13,20 @@ import (
 type Router struct {
 	engine            *gin.Engine
 	fileUploadHandler *handler.FileUploadHandler
-	fileListHandler   *handler.FileListHandler
+	fileGetHandler    *handler.FileGetHandler
 	fileDeleteHandler *handler.FileDeleteHandler
 }
 
 // NewRouter creates a new Router instance
 func NewRouter(
 	fileUploadHandler *handler.FileUploadHandler,
-	fileListHandler *handler.FileListHandler,
+	fileGetHandler *handler.FileGetHandler,
 	fileDeleteHandler *handler.FileDeleteHandler,
 ) *Router {
 	return &Router{
 		engine:            gin.Default(),
 		fileUploadHandler: fileUploadHandler,
-		fileListHandler:   fileListHandler,
+		fileGetHandler:    fileGetHandler,
 		fileDeleteHandler: fileDeleteHandler,
 	}
 }
@@ -43,9 +43,10 @@ func (r *Router) SetupRoutes() {
 
 	v1 := api.Group("/v1")
 	v1.POST("/upload/init/:file_name", r.fileUploadHandler.ExecuteInit)
-	v1.POST("/upload/:upload_id/:chunk_id", r.fileUploadHandler.Execute)
+	v1.POST("/upload/:file_id/:chunk_number", r.fileUploadHandler.Execute)
 	v1.DELETE("/:file_name", r.fileDeleteHandler.Execute)
-	v1.GET("/files", r.fileListHandler.Execute)
+	v1.GET("/files", r.fileGetHandler.Execute)
+	v1.GET("/files/:file_name", r.fileGetHandler.ExecuteGetStats)
 
 	// Debug routes for profiling
 	debug := r.engine.Group("/debug")

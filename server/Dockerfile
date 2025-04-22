@@ -2,33 +2,29 @@ FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
-# Copy go.mod and go.sum files
 COPY go.mod go.sum ./
-
-# Download dependencies
 RUN go mod download
 
-# Copy the source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd
+# Build the application for production
+# Build the entire package in the cmd directory
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags='-w -s' -o server ./cmd
 
+# --- Final Production Stage ---
 FROM alpine:latest
 
-WORKDIR /app
+WORKDIR /root/
 
-# Install necessary certificates for HTTPS
+# Install ca-certificates
 RUN apk --no-cache add ca-certificates
 
-# Copy the binary from the builder stage
 COPY --from=builder /app/server .
 
-# Create the storage directory
+# Create the storage directory (if needed, adjust path as necessary)
 RUN mkdir -p /app/storage
 
-# Expose the port (this will be overridden by docker-compose)
 EXPOSE 8080
 
-# Run the server
+# Command to run the executable
 CMD ["./server"] 

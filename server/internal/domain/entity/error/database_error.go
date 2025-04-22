@@ -18,7 +18,7 @@ func NewDatabaseError(err error, errMsg string) *DatabaseError {
 }
 
 func (e *DatabaseError) Error() string {
-	return e.errMsg
+	return fmt.Sprintf("%s: %v", e.errMsg, e.err)
 }
 
 func (e *DatabaseError) ErrorObject() error {

@@ -3,12 +3,13 @@ package database
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path/filepath"
 
 	"gorm.io/gorm"
 
 	"github.com/tomoya.tokunaga/server/internal/domain/entity"
 	e "github.com/tomoya.tokunaga/server/internal/domain/entity/error"
-	"github.com/tomoya.tokunaga/server/internal/domain/repository"
 )
 
 // fileRepository implements the repository.FileRepository interface
@@ -17,38 +18,8 @@ type fileRepository struct {
 }
 
 // NewFileRepository creates a new MySQL file repository
-func NewFileRepository(db *gorm.DB) repository.FileRepository {
+func NewFileRepository(db *gorm.DB) FileRepository {
 	return &fileRepository{db: db}
-}
-
-// CreateFile creates a new file entry in the repository
-func (r *fileRepository) CreateFile(ctx context.Context, file *entity.File) (uint64, e.CustomError) {
-	var model FileModel
-	model.FromEntity(file)
-
-	tx := r.db.WithContext(ctx).Begin()
-	if err := tx.Create(&model).Error; err != nil {
-		tx.Rollback()
-		return 0, e.NewDatabaseError(err, "failed to create file record")
-	}
-	if err := tx.Commit().Error; err != nil {
-		return 0, e.NewDatabaseError(err, "failed to commit transaction")
-	}
-
-	return model.ID, nil
-}
-
-// GetFileByID retrieves a file by its ID
-func (r *fileRepository) GetFileByID(ctx context.Context, id uint64) (*entity.File, e.CustomError) {
-	var model FileModel
-	if err := r.db.WithContext(ctx).First(&model, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, e.NewDatabaseError(err, "failed to get file by ID")
-	}
-
-	return model.ToEntity(), nil
 }
 
 // GetFileByName retrieves a file by its name
@@ -58,55 +29,108 @@ func (r *fileRepository) GetFileByName(ctx context.Context, name string) (*entit
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		return nil, e.NewDatabaseError(err, "failed to get file by name")
+		return nil, e.NewDatabaseError(err, "GetFileByName: failed to get file by name")
 	}
 
 	return model.ToEntity(), nil
 }
 
-// UpdateFileStatus updates the status of a file
-func (r *fileRepository) UpdateFileStatus(ctx context.Context, id uint64, status entity.FileStatus) e.CustomError {
-	if err := r.db.WithContext(ctx).Model(&FileModel{}).Where("id = ?", id).Update("status", string(status)).Error; err != nil {
-		return e.NewDatabaseError(err, "failed to update file status")
+// GetChunksByFileID retrieves all file chunks associated with a given file ID.
+func (r *fileRepository) GetChunksByFileID(ctx context.Context, fileID uint64) ([]*entity.FileChunk, e.CustomError) {
+	var chunkModels []FileChunkModel
+
+	err := r.db.WithContext(ctx).
+		Where("parent_id = ?", fileID).
+		Order("chunk_number asc"). // Optional: Order chunks by number
+		Find(&chunkModels).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return []*entity.FileChunk{}, nil
+		}
+		return nil, e.NewDatabaseError(err, "GetChunksByFileID: failed to get file chunks by file ID")
 	}
 
-	return nil
+	chunks := make([]*entity.FileChunk, len(chunkModels))
+	for i, model := range chunkModels {
+		chunks[i] = model.ToEntity()
+		if chunks[i] == nil {
+			return nil, e.NewDatabaseError(fmt.Errorf("failed to convert chunk model ID %d to entity", model.ID), "GetChunksByFileID: chunk conversion failed")
+		}
+	}
+
+	return chunks, nil
 }
 
-// IncrementCompletedChunks increments the completed chunks counter of a file
-func (r *fileRepository) IncrementCompletedChunks(ctx context.Context, id uint64) (uint, uint, e.CustomError) {
-	// TODO: should use mutex?
-	tx := r.db.WithContext(ctx).Begin()
-
-	if err := tx.Model(&FileModel{}).Where("id = ?", id).Update("completed_chunks", gorm.Expr("completed_chunks + ?", 1)).Error; err != nil {
-		tx.Rollback()
-		return 0, 0, e.NewDatabaseError(err, "failed to increment completed chunks")
+// GetChunksByStatus retrieves file chunks associated with a given file ID that match any of the specified statuses.
+func (r *fileRepository) GetChunksByStatus(ctx context.Context, fileID uint64, statuses []entity.FileStatus) ([]*entity.FileChunk, e.CustomError) {
+	var chunkModels []FileChunkModel
+	statusStrings := make([]string, len(statuses))
+	for i, s := range statuses {
+		statusStrings[i] = string(s)
 	}
 
-	var model FileModel
-	if err := tx.Select("completed_chunks, total_chunks").First(&model, id).Error; err != nil {
-		tx.Rollback()
-		return 0, 0, e.NewDatabaseError(err, "failed to get updated file")
+	err := r.db.WithContext(ctx).
+		Where("parent_id = ? AND status IN ?", fileID, statusStrings).
+		Find(&chunkModels).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return []*entity.FileChunk{}, nil
+		}
+		return nil, e.NewDatabaseError(err, "GetChunksByStatus: failed to get file chunks by status")
 	}
 
-	if err := tx.Commit().Error; err != nil {
-		return 0, 0, e.NewDatabaseError(err, "failed to commit transaction")
+	// Convert models to entities
+	chunks := make([]*entity.FileChunk, len(chunkModels))
+	for i, model := range chunkModels {
+		chunks[i] = model.ToEntity()
+		if chunks[i] == nil {
+			return nil, e.NewDatabaseError(fmt.Errorf("failed to convert chunk model ID %d to entity", model.ID), "GetChunksByStatus: chunk conversion failed")
+		}
 	}
 
-	return model.CompletedChunks, model.TotalChunks, nil
+	return chunks, nil
 }
 
-// DeleteFile deletes a file from the repository
-func (r *fileRepository) DeleteFile(ctx context.Context, id uint64) e.CustomError {
-	if err := r.db.WithContext(ctx).Delete(&FileModel{}, id).Error; err != nil {
-		return e.NewDatabaseError(err, "failed to delete file")
+// GetFileAndChunk retrieves a file and a specific chunk by file ID and chunk number.
+func (r *fileRepository) GetFileAndChunk(ctx context.Context, fileID uint64, chunkNumber uint64) (*entity.File, *entity.FileChunk, e.CustomError) {
+	var fileModel FileModel
+	var chunkModel FileChunkModel
+
+	db := r.db.WithContext(ctx)
+
+	// Get the file
+	if err := db.First(&fileModel, fileID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, e.NewNotFoundError(err, fmt.Sprintf("file with ID %d not found", fileID))
+		}
+		return nil, nil, e.NewDatabaseError(err, "GetFileAndChunk: failed to get file by ID")
 	}
 
-	return nil
+	// Get the specific chunk
+	if err := db.Where("parent_id = ? AND chunk_number = ?", fileID, chunkNumber).First(&chunkModel).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, e.NewNotFoundError(err, fmt.Sprintf("chunk number %d for file ID %d not found", chunkNumber, fileID))
+		}
+		return nil, nil, e.NewDatabaseError(err, "GetFileAndChunk: failed to get file chunk")
+	}
+
+	fileEntity := fileModel.ToEntity()
+	if fileEntity == nil {
+		return nil, nil, e.NewDatabaseError(errors.New("failed to convert file model to entity"), "GetFileAndChunk: file conversion failed")
+	}
+
+	chunkEntity := chunkModel.ToEntity()
+	if chunkEntity == nil {
+		return nil, nil, e.NewDatabaseError(errors.New("failed to convert chunk model to entity"), "GetFileAndChunk: chunk conversion failed")
+	}
+
+	return fileEntity, chunkEntity, nil
 }
 
-// ListFiles lists all completed files
-func (r *fileRepository) ListFiles(ctx context.Context) ([]string, e.CustomError) {
+// GetFileNames lists all completed files
+func (r *fileRepository) GetFileNames(ctx context.Context) ([]string, e.CustomError) {
 	var fileNames []string
 
 	err := r.db.WithContext(ctx).Model(&FileModel{}).
@@ -114,8 +138,155 @@ func (r *fileRepository) ListFiles(ctx context.Context) ([]string, e.CustomError
 		Pluck("name", &fileNames).Error
 
 	if err != nil {
-		return nil, e.NewDatabaseError(err, "failed to list files")
+		return nil, e.NewDatabaseError(err, "ListFiles: failed to list files")
 	}
 
 	return fileNames, nil
+}
+
+// CreateFileWithChunks creates a file and its corresponding chunk records within a transaction.
+func (r *fileRepository) CreateFileWithChunks(ctx context.Context, file *entity.File, baseDir string) (*entity.File, e.CustomError) {
+	tx := r.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return nil, e.NewDatabaseError(tx.Error, "CreateFileWithChunks: failed to begin transaction")
+	}
+
+	// Create FileModel
+	var fileModel FileModel
+	fileModel.FromEntity(file)
+	if err := tx.Create(&fileModel).Error; err != nil {
+		tx.Rollback()
+		return nil, e.NewDatabaseError(err, "CreateFileWithChunks: failed to create file record")
+	}
+
+	// Create FileChunkModels
+	fileChunks := make([]FileChunkModel, file.TotalChunks)
+	for i := uint(0); i < file.TotalChunks; i++ {
+		fileChunks[i] = FileChunkModel{
+			ParentID:    fileModel.ID,
+			ChunkNumber: uint64(i),
+			Status:      string(entity.FileStatusInitialized),
+			FilePath:    filepath.Join(baseDir, file.Name, fmt.Sprintf("%d", i)),
+		}
+	}
+
+	// Use CreateInBatches to handle potentially large numbers of chunks
+	if err := tx.CreateInBatches(&fileChunks, 1000).Error; err != nil {
+		tx.Rollback()
+		return nil, e.NewDatabaseError(err, "CreateFileWithChunks: failed to create file chunks")
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		// Rollback might have already happened implicitly, but doesn't hurt.
+		tx.Rollback()
+		return nil, e.NewDatabaseError(err, "CreateFileWithChunks: failed to commit transaction")
+	}
+
+	createdFile := fileModel.ToEntity()
+	if createdFile == nil {
+		// Handle the case where conversion fails, although it shouldn't if creation succeeded
+		return nil, e.NewDatabaseError(errors.New("failed to convert created file model to entity"), "CreateFileWithChunks: database conversion error")
+	}
+
+	return createdFile, nil
+}
+
+// DeleteFileByID deletes a file by its ID. This also triggers the cascade delete of all its chunks.
+func (r *fileRepository) DeleteFileByID(ctx context.Context, fileID uint64) e.CustomError {
+	if err := r.db.WithContext(ctx).Delete(&FileModel{}, fileID).Error; err != nil {
+		return e.NewDatabaseError(err, "DeleteFileByID: failed to delete file")
+	}
+	return nil
+}
+
+// UpdateFileStatus updates the status of a file
+func (r *fileRepository) UpdateFileStatus(ctx context.Context, id uint64, status entity.FileStatus) e.CustomError {
+	if err := r.db.WithContext(ctx).Model(&FileModel{}).Where("id = ?", id).Update("status", string(status)).Error; err != nil {
+		return e.NewDatabaseError(err, "UpdateFileStatus: failed to update file status")
+	}
+
+	return nil
+}
+
+// UpdateChunksStatus updates the status of multiple file chunks identified by their IDs within a transaction.
+func (r *fileRepository) UpdateChunksStatus(ctx context.Context, chunkIDs []uint64, status entity.FileStatus) e.CustomError {
+	if len(chunkIDs) == 0 {
+		return nil
+	}
+
+	tx := r.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return e.NewDatabaseError(tx.Error, "UpdateChunksStatus: failed to begin transaction")
+	}
+
+	// Update chunk statuses
+	if err := tx.Model(&FileChunkModel{}).Where("id IN ?", chunkIDs).Update("status", string(status)).Error; err != nil {
+		tx.Rollback()
+		return e.NewDatabaseError(err, "UpdateChunksStatus: failed to update file chunk statuses")
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		return e.NewDatabaseError(err, "UpdateChunksStatus: failed to commit transaction")
+	}
+
+	return nil
+}
+
+// UpdateFileAndChunkStatus updates the status of a specific file and a specific chunk within a transaction.
+func (r *fileRepository) UpdateFileAndChunkStatus(ctx context.Context, fileID uint64, chunkID uint64, status entity.FileStatus) e.CustomError {
+	tx := r.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return e.NewDatabaseError(tx.Error, "UpdateFileAndChunkStatus: failed to begin transaction")
+	}
+
+	statusStr := string(status)
+
+	// Update file status
+	if err := tx.Model(&FileModel{}).Where("id = ?", fileID).Update("status", statusStr).Error; err != nil {
+		tx.Rollback()
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return e.NewNotFoundError(err, fmt.Sprintf("UpdateFileAndChunkStatus: file with ID %d not found for status update", fileID))
+		}
+		return e.NewDatabaseError(err, "UpdateFileAndChunkStatus: failed to update file status")
+	}
+
+	// Update chunk status
+	if err := tx.Model(&FileChunkModel{}).Where("id = ?", chunkID).Update("status", statusStr).Error; err != nil {
+		tx.Rollback()
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return e.NewNotFoundError(err, fmt.Sprintf("chunk with ID %d not found for status update", chunkID))
+		}
+		return e.NewDatabaseError(err, "UpdateFileAndChunkStatus: failed to update file chunk status")
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		return e.NewDatabaseError(err, "UpdateFileAndChunkStatus: failed to commit transaction")
+	}
+
+	return nil
+}
+
+// IncrementUploadedChunks increments the uploaded chunks counter of a file
+func (r *fileRepository) IncrementUploadedChunks(ctx context.Context, id uint64) (uint, uint, e.CustomError) {
+	// TODO: should use mutex? or MVCC make it concurrent safe?
+	tx := r.db.WithContext(ctx).Begin()
+
+	if err := tx.Model(&FileModel{}).Where("id = ?", id).Update("uploaded_chunks", gorm.Expr("uploaded_chunks + ?", 1)).Error; err != nil {
+		tx.Rollback()
+		return 0, 0, e.NewDatabaseError(err, "IncrementUploadedChunks: failed to increment uploaded chunks")
+	}
+
+	var model FileModel
+	if err := tx.Select("uploaded_chunks, total_chunks").First(&model, id).Error; err != nil {
+		tx.Rollback()
+		return 0, 0, e.NewDatabaseError(err, "IncrementUploadedChunks: failed to get updated file")
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return 0, 0, e.NewDatabaseError(err, "IncrementUploadedChunks: failed to commit transaction")
+	}
+
+	return model.UploadedChunks, model.TotalChunks, nil
 }

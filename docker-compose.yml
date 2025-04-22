@@ -1,7 +1,7 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: mysql
+    container_name: fs-store-mysql
     restart: always
     env_file: 
       - ./.env
@@ -10,7 +10,7 @@ services:
       - MYSQL_USER=${DB_USER}
       - MYSQL_PASSWORD=${DB_PASSWORD}
     ports:
-      - "13306:3306"
+      - "33306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
       - ./db/init:/docker-entrypoint-initdb.d
@@ -44,7 +44,7 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
-    container_name: fs-store
+    container_name: fs-store-server
     restart: always
     env_file: 
       - ./.env
@@ -53,7 +53,7 @@ services:
       - DB_PORT=3306
       - BASE_STORAGE_DIR=${BASE_STORAGE_DIR}
     ports:
-      - "18080:${PORT}"
+      - "38080:${PORT}"
     volumes:
       - file-store-storage:${BASE_STORAGE_DIR}
     depends_on:

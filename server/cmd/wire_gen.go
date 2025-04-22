@@ -31,15 +31,14 @@ func InitializeApplication() (*Application, error) {
 		return nil, err
 	}
 	fileRepository := di.FileRepositoryProvider(db)
-	fileChunkRepository := di.FileChunkRepositoryProvider(db)
-	storageRepository := di.StorageRepositoryProvider()
-	fileUploadUseCase := di.FileUploadUseCaseProvider(fileRepository, fileChunkRepository, storageRepository, config)
-	fileUploadHandler := di.FileUploadHandlerProvider(fileUploadUseCase, logger)
-	fileListUseCase := di.FileListUseCaseProvider(fileRepository)
-	fileListHandler := di.FileListHandlerProvider(fileListUseCase, logger)
-	fileDeleteUseCase := di.FileDeleteUseCaseProvider(fileRepository, fileChunkRepository, storageRepository, config)
+	fileStorageRepository := di.StorageRepositoryProvider(logger)
+	fileUploadUseCase := di.FileUploadUseCaseProvider(fileRepository, fileStorageRepository, config)
+	fileUploadHandler := di.FileUploadHandlerProvider(fileUploadUseCase, config, logger)
+	fileGetUseCase := di.FileGetUseCaseProvider(fileRepository)
+	fileGetHandler := di.FileGetHandlerProvider(fileGetUseCase, config, logger)
+	fileDeleteUseCase := di.FileDeleteUseCaseProvider(fileRepository, fileStorageRepository, config)
 	fileDeleteHandler := di.FileDeleteHandlerProvider(fileDeleteUseCase, logger)
-	router := di.RouterProvider(fileUploadHandler, fileListHandler, fileDeleteHandler)
+	router := di.RouterProvider(fileUploadHandler, fileGetHandler, fileDeleteHandler)
 	server := HTTPServerProvider(config, router)
 	application := &Application{
 		Config: config,

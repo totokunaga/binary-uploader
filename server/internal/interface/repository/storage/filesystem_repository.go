@@ -6,16 +6,19 @@ import (
 	"os"
 	"path/filepath"
 
+	"golang.org/x/exp/slog"
+
 	e "github.com/tomoya.tokunaga/server/internal/domain/entity/error"
-	"github.com/tomoya.tokunaga/server/internal/domain/repository"
 )
 
 // storageRepository implements the repository.StorageRepository interface
-type storageRepository struct{}
+type storageRepository struct {
+	logger *slog.Logger
+}
 
 // NewStorageRepository creates a new filesystem storage repository
-func NewStorageRepository() repository.StorageRepository {
-	return &storageRepository{}
+func NewStorageRepository(logger *slog.Logger) FileStorageRepository {
+	return &storageRepository{logger: logger}
 }
 
 // WriteChunk writes the file chunk to the storage
@@ -31,7 +34,11 @@ func (r *storageRepository) WriteChunk(ctx context.Context, reader io.Reader, fi
 	if err != nil {
 		return e.NewFileStorageError(err, "failed to create file")
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			r.logger.Error("Failed to close file", "error", err)
+		}
+	}()
 
 	// Write the file content in chunks of 1MB
 	buffer := make([]byte, 1024*1024) // TODO: the size must be configured by Config struct
@@ -113,4 +120,23 @@ func (r *storageRepository) FileExists(ctx context.Context, filePath string) (bo
 
 	// Another error occurred
 	return false, e.NewFileStorageError(err, "failed to check if file exists")
+}
+
+// DeleteFile deletes a file at the given path
+func (r *storageRepository) DeleteFile(ctx context.Context, filePath string) e.CustomError {
+	// Check if the file exists
+	_, err := os.Stat(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return e.NewFileStorageError(err, "failed to check file status before deletion")
+	}
+
+	// Delete the file
+	if err := os.Remove(filePath); err != nil {
+		return e.NewFileStorageError(err, "failed to delete file")
+	}
+
+	return nil
 }

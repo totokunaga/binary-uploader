@@ -1,8 +1,10 @@
-.PHONY: up down build logs ps clean cli server migrate run-cli bin-dir help
+.PHONY: up down build logs ps clean cli server migrate run-cli bin-dir help mock test-server coverage lint
 
 .DEFAULT_GOAL := help
 
 DOCKER_COMPOSE = docker compose -f docker-compose.yml --env-file .env
+DOCKER_COMPOSE_TOOL = docker compose -f docker-compose.tool.yml
+DOCKER_COMPOSE_CLI = docker compose -f docker-compose.cli.yml
 
 help:
 	@echo "Usage:"
@@ -13,11 +15,13 @@ help:
 	@echo "  make server    - Build only the server container"
 	@echo "  make migrate   - Build only the migration container"
 	@echo "  make cli       - Build the CLI tool locally"
-	@echo "  make run-cli   - Run the CLI tool (builds it first if needed)"
 	@echo "  make logs      - View output from containers"
 	@echo "  make ps        - List running containers"
-	@echo "  make clean     - Remove containers, volumes, and networks"
+	@echo "  make clean     - Remove containers, volumes, networks, CLI binary and coverage reports"
+	@echo "  make coverage  - Generate HTML test coverage reports for server and cli"
 	@echo "  make help      - Display this help message"
+	@echo "  make test      - Run tests for server and cli"
+	@echo "  make lint      - Run linter for the server directory"
 
 up:
 	$(DOCKER_COMPOSE) up
@@ -44,22 +48,32 @@ ps:
 	$(DOCKER_COMPOSE) ps
 
 wire:
-	pushd server/cmd && wire && popd
-	pushd cli/cmd && wire && popd
+	$(DOCKER_COMPOSE_TOOL) run --rm wire
 
-bin-dir:
-	@mkdir -p bin
-
-cli: bin-dir
-	@echo "Building CLI tool locally..."
-	cd cli && go build -o ../bin/cli-tool ./cmd
-
-run-cli: cli
-	@echo "Running CLI tool..."
-	@./bin/cli-tool
+cli:
+	cd cli/cmd && go build -o ../../fs-store .
 
 clean:
 	$(DOCKER_COMPOSE) down -v --remove-orphans
-	@echo "Containers, volumes, and networks removed"
-	@rm -f bin/cli-tool 2>/dev/null || true
-	@echo "CLI binary removed" 
+	$(DOCKER_COMPOSE_TOOL) run --rm clean
+
+test:
+	$(DOCKER_COMPOSE_TOOL) run --rm test
+
+lint:
+	$(DOCKER_COMPOSE_TOOL) run --rm lint
+
+coverage:
+	@echo "---------------------------------------"
+	@echo " Generating coverage report for [Server]"
+	@echo "---------------------------------------"
+	cd server && go test ./... -covermode=atomic -coverprofile=coverage.out
+	cd server && go tool cover -html=coverage.out -o coverage.html
+	@echo "Server coverage report generated at server/coverage.html"
+	@echo
+	@echo "---------------------------------------"
+	@echo " Generating coverage report for [CLI]"
+	@echo "---------------------------------------"
+	cd cli && go test ./... -covermode=atomic -coverprofile=coverage.out
+	cd cli && go tool cover -html=coverage.out -o coverage.html
+	@echo "CLI coverage report generated at cli/coverage.html"

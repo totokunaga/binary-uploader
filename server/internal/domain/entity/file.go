@@ -5,34 +5,34 @@ import "time"
 type FileStatus string
 
 const (
-	FileStatusUploadInitialized FileStatus = "UPLOAD_INITIALIZED"
-	FileStatusUploadInProgress  FileStatus = "UPLOAD_IN_PROGRESS"
-	FileStatusUploadFailed      FileStatus = "UPLOAD_FAILED"
-	FileStatusUploaded          FileStatus = "UPLOADED"
-	FileStatusDeleteInitialized FileStatus = "DELETE_INITIALIZED"
-	FileStatusDeleteInProgress  FileStatus = "DELETE_IN_PROGRESS"
-	FileStatusDeleteFailed      FileStatus = "DELETE_FAILED"
-	FileStatusDeleted           FileStatus = "DELETED"
+	FileStatusInitialized FileStatus = "INITIALIZED"
+	FileStatusInProgress  FileStatus = "IN_PROGRESS"
+	FileStatusFailed      FileStatus = "FAILED"
+	FileStatusUploaded    FileStatus = "UPLOADED"
 )
 
 type File struct {
-	ID              uint64     `json:"id"`
-	Name            string     `json:"name"`
-	Size            uint64     `json:"size"`
-	Status          FileStatus `json:"status"`
-	TotalChunks     uint       `json:"total_chunks"`
-	CompletedChunks uint       `json:"completed_chunks"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	FileChunks      []FileChunk
+	ID             uint64     `json:"id"`
+	Name           string     `json:"name"`
+	Size           uint64     `json:"size"`
+	Checksum       string     `json:"checksum"`
+	ChunkSize      uint64     `json:"chunk_size"`
+	Status         FileStatus `json:"status"`
+	TotalChunks    uint       `json:"total_chunks"`
+	UploadedChunks uint       `json:"uploaded_chunks"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	FileChunks     []FileChunk
 }
 
-func NewFile(name string, size uint64, totalChunks uint) *File {
+func NewFile(name string, size uint64, checksum string, totalChunks uint, chunkSize uint64) *File {
 	return &File{
-		Name:            name,
-		Size:            size,
-		Status:          FileStatusUploadInitialized,
-		TotalChunks:     totalChunks,
-		CompletedChunks: 0,
+		Name:           name,
+		Size:           size,
+		Checksum:       checksum,
+		ChunkSize:      chunkSize,
+		Status:         FileStatusInitialized,
+		TotalChunks:    totalChunks,
+		UploadedChunks: 0,
 	}
 }

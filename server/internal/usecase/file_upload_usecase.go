@@ -5,36 +5,43 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"strings"
 
 	"github.com/tomoya.tokunaga/server/internal/domain/entity"
 	e "github.com/tomoya.tokunaga/server/internal/domain/entity/error"
-	"github.com/tomoya.tokunaga/server/internal/domain/repository"
+	"github.com/tomoya.tokunaga/server/internal/interface/repository/database"
+	"github.com/tomoya.tokunaga/server/internal/interface/repository/storage"
 )
 
-type FileUploadUseCase interface {
-	ExecuteInit(ctx context.Context, fileName string, totalSize uint64, totalChunks uint) (uint64, e.CustomError)
-	Execute(ctx context.Context, uploadID uint64, chunkID uint, reader io.Reader) e.CustomError
+type FileUploadUseCaseExecuteInitInput struct {
+	FileName    string
+	Checksum    string
+	TotalSize   uint64
+	TotalChunks uint
+	ChunkSize   uint64
+	IsReUpload  bool
+}
+
+type FileUploadUseCaseExecuteInput struct {
+	FileID      uint64
+	ChunkNumber uint64
+	Reader      io.Reader
 }
 
 type fileUploadUseCase struct {
-	fileRepo        repository.FileRepository
-	fileChunkRepo   repository.FileChunkRepository
-	storageRepo     repository.StorageRepository
+	fileRepo        database.FileRepository
+	storageRepo     storage.FileStorageRepository
 	baseStorageDir  string
 	uploadSizeLimit uint64
 }
 
 func NewFileUploadUseCase(
-	fileRepo repository.FileRepository,
-	fileChunkRepo repository.FileChunkRepository,
-	storageRepo repository.StorageRepository,
+	fileRepo database.FileRepository,
+	storageRepo storage.FileStorageRepository,
 	baseStorageDir string,
 	uploadSizeLimit uint64,
 ) FileUploadUseCase {
 	return &fileUploadUseCase{
 		fileRepo:        fileRepo,
-		fileChunkRepo:   fileChunkRepo,
 		storageRepo:     storageRepo,
 		baseStorageDir:  baseStorageDir,
 		uploadSizeLimit: uploadSizeLimit,
@@ -42,122 +49,146 @@ func NewFileUploadUseCase(
 }
 
 // ExecuteInit initializes a file upload and returns an upload ID
-func (uc *fileUploadUseCase) ExecuteInit(ctx context.Context, fileName string, totalSize uint64, totalChunks uint) (uint64, e.CustomError) {
-	// Validate the file name
-	if strings.Contains(fileName, "..") {
-		return 0, e.NewInvalidInputError(nil, fmt.Sprintf("invalid file name: %s", fileName))
-	}
+func (uc *fileUploadUseCase) ExecuteInit(ctx context.Context, input FileUploadUseCaseExecuteInitInput) (*entity.File, []*entity.FileChunk, e.CustomError) {
+	// Directory path for the file chunks
+	fileDirPath := filepath.Join(uc.baseStorageDir, input.FileName)
 
 	// Check if the file already exists
-	existingFile, err := uc.fileRepo.GetFileByName(ctx, fileName)
+	existingFile, err := uc.fileRepo.GetFileByName(ctx, input.FileName)
 	if err != nil {
-		return 0, err
+		return nil, nil, err
 	}
-	if existingFile != nil {
-		return 0, e.NewInvalidInputError(err, fmt.Sprintf("%s already exists", fileName))
+	if existingFile == nil {
+		// Create a new file object and insert it to "files" and corresponding child records"file_chunks" tables
+		file := entity.NewFile(input.FileName, input.TotalSize, input.Checksum, input.TotalChunks, input.ChunkSize)
+
+		fileRecord, err := uc.fileRepo.CreateFileWithChunks(ctx, file, uc.baseStorageDir)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// Create a directory for the file chunks
+		if err := uc.storageRepo.CreateDirectory(ctx, fileDirPath); err != nil {
+			return nil, nil, err
+		}
+
+		return fileRecord, nil, nil
 	}
 
-	// Check if the file size is too large // TODO: can be at the handler layer?
-	if totalSize > uc.uploadSizeLimit {
-		return 0, e.NewInvalidInputError(
-			err,
-			fmt.Sprintf("%s is too large: %d bytes. must be less than %d bytes", fileName, totalSize, uc.uploadSizeLimit),
-		)
+	// Assume two files are same if they have the same checksum and size
+	isSameFile := existingFile.Checksum == input.Checksum && existingFile.Size == input.TotalSize
+	if !isSameFile {
+		return nil, nil, e.NewInvalidInputError(err, fmt.Sprintf("%s with different content (including orphaned data) already exists", input.FileName))
+	}
+	if existingFile.Status == entity.FileStatusInitialized {
+		// Due to the atomicity of the transaction, if the status of "files" record is "INITIALIZED", that of "file_chunks" records is also
+		// "INITIALIZED", so there's no need to check the inconsistency of file status and file chunk status. However, the file storage could
+		// fail to be created even though the "files" record is created, so the following makes sure the directory is certainly there in the file storage
+		if err := uc.storageRepo.CreateDirectory(ctx, fileDirPath); err != nil {
+			return nil, nil, err
+		}
+		return existingFile, nil, nil
+	}
+	if !input.IsReUpload {
+		return nil, nil, e.NewInvalidInputError(err, fmt.Sprintf("%s with same content(including orphaned data) already exists", input.FileName))
+	}
+	if existingFile.Status != entity.FileStatusInProgress && existingFile.Status != entity.FileStatusFailed {
+		// only accepts re-uploading for files which aren't completed yet or not in the deletion process
+		return nil, nil, e.NewInvalidInputError(err, fmt.Sprintf("existing %s is in %s status and cannot be re-uploaded", input.FileName, existingFile.Status))
 	}
 
-	// Create a directory for the file chunks
-	fileDirPath := filepath.Join(uc.baseStorageDir, fileName)
-	if err := uc.storageRepo.CreateDirectory(ctx, fileDirPath); err != nil {
-		return 0, err
-	}
-
-	// Create a new file entry
-	file := entity.NewFile(fileName, totalSize, totalChunks)
-
-	// Save the file to the repository
-	fileID, err := uc.fileRepo.CreateFile(ctx, file)
+	// remove corresponding file chunks whose status is not "UPLOADED"
+	invalidChunks, err := uc.fileRepo.GetChunksByStatus(ctx, existingFile.ID, []entity.FileStatus{
+		entity.FileStatusInitialized,
+		entity.FileStatusInProgress,
+		entity.FileStatusFailed,
+	})
 	if err != nil {
-		// Clean up the created directory
-		// Not to hide the original database error and not to complicate the error handling, error occurs
-		// in directory deletion is not handled here but a batch job will clean it up
-		_ = uc.storageRepo.DeleteDirectory(ctx, fileDirPath)
-		return 0, err
+		return nil, nil, err
+	}
+	// TODO: invalidChunks could be empty due to the failure in completed_chunks counter increment or status update
+	for _, chunk := range invalidChunks {
+		if err := uc.storageRepo.DeleteFile(ctx, chunk.FilePath); err != nil {
+			return nil, nil, err
+		}
 	}
 
-	// Create file chunk entries
-	if err := uc.fileChunkRepo.CreateFileChunks(ctx, fileID, totalChunks, uc.baseStorageDir, fileName); err != nil {
-		// Clean up the created file and directory
-		// Similarly to the previous case, error occurs in file and directory will be handled by a batch job
-		_ = uc.fileRepo.DeleteFile(ctx, fileID)
-		_ = uc.storageRepo.DeleteDirectory(ctx, fileDirPath)
-		return 0, err
+	// set the status of invalid chunks to "INITIALIZED"
+	chunkIDsToUpdate := make([]uint64, 0, len(invalidChunks))
+	for _, chunk := range invalidChunks {
+		if chunk.Status != entity.FileStatusInitialized {
+			chunkIDsToUpdate = append(chunkIDsToUpdate, chunk.ID)
+		}
+	}
+	if len(chunkIDsToUpdate) > 0 {
+		if err := uc.fileRepo.UpdateChunksStatus(ctx, chunkIDsToUpdate, entity.FileStatusInitialized); err != nil {
+			return nil, nil, err
+		}
 	}
 
-	return fileID, nil
+	return existingFile, invalidChunks, nil
 }
 
 // Execute uploads a chunk of a file
-func (uc *fileUploadUseCase) Execute(ctx context.Context, uploadID uint64, chunkID uint, reader io.Reader) e.CustomError {
-	// Get the file
-	file, err := uc.fileRepo.GetFileByID(ctx, uploadID)
-	if err != nil || file == nil {
-		return e.NewInvalidInputError(err, fmt.Sprintf("invalid upload ID: %d", uploadID))
-	}
-
-	// Check if file status is valid for uploading chunks
-	// TODO: If the status is failed, remove the file chunk and create a new file chunk
-	if file.Status == entity.FileStatusUploaded || file.Status == entity.FileStatusUploadFailed {
-		return e.NewInvalidInputError(fmt.Errorf("file status is %s and cannot be updated", file.Status), "")
-	}
-
-	// Get the file chunk
-	chunk, err := uc.fileChunkRepo.GetFileChunk(ctx, uploadID, chunkID)
+func (uc *fileUploadUseCase) Execute(ctx context.Context, input FileUploadUseCaseExecuteInput) e.CustomError {
+	// validate the upload ID, chunk ID, and file and chunk status
+	file, chunk, err := uc.fileRepo.GetFileAndChunk(ctx, input.FileID, input.ChunkNumber)
 	if err != nil {
 		return err
 	}
-	if chunk == nil {
-		return e.NewInvalidInputError(nil, fmt.Sprintf("invalid chunk ID %d for upload ID: %d", chunkID, uploadID))
+	if file == nil || chunk == nil {
+		return e.NewInvalidInputError(err, fmt.Sprintf("data not found for (file ID, chunk ID) = (%d, %d)", input.FileID, input.ChunkNumber))
+	}
+	if (file.Status != entity.FileStatusInitialized && file.Status != entity.FileStatusInProgress) || chunk.Status != entity.FileStatusInitialized {
+		return e.NewInvalidInputError(fmt.Errorf("file upload needs to be initialized"), "")
 	}
 
-	// Check if chunk status is valid for uploading
-	if chunk.Status == entity.FileChunkStatusUploaded {
-		return e.NewInvalidInputError(nil, fmt.Sprintf("chunk ID: %d of upload ID: %d already uploaded", chunkID, uploadID))
-	}
-
-	// Update chunk status to processing
-	if err := uc.fileChunkRepo.UpdateFileChunkStatus(ctx, chunk.ID, entity.FileChunkStatusUploadInProgress); err != nil {
-		return err
+	// Update file and chunk status to processing
+	if file.Status == entity.FileStatusInitialized {
+		err = uc.fileRepo.UpdateFileAndChunkStatus(ctx, file.ID, chunk.ID, entity.FileStatusInProgress)
+		if err != nil {
+			return err
+		}
+	} else {
+		// File status can be "IN_PROGRESS" or "FAILED" (due to other concurrent chunk uploads) at the time of this chunk upload. This chunk upload should
+		// continue even though other concurrent chunks are failed to uploaded.
+		err = uc.fileRepo.UpdateChunksStatus(ctx, []uint64{chunk.ID}, entity.FileStatusInProgress)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Write the chunk to storage
-	if err := uc.storageRepo.WriteChunk(ctx, reader, chunk.FilePath); err != nil {
-		// Update chunk status to failed
-		statusUpdateErr := uc.fileChunkRepo.UpdateFileChunkStatus(ctx, chunk.ID, entity.FileChunkStatusUploadFailed)
-		if statusUpdateErr != nil {
-			return err
-		}
+	if err := uc.storageRepo.WriteChunk(ctx, input.Reader, chunk.FilePath); err != nil {
 		return err
 	}
 
-	// TODO: a batch job should compare the current file size and expected file size
 	// Update chunk status to completed
-	if err := uc.fileChunkRepo.UpdateFileChunkStatus(ctx, chunk.ID, entity.FileChunkStatusUploaded); err != nil {
+	if err = uc.fileRepo.UpdateChunksStatus(ctx, []uint64{chunk.ID}, entity.FileStatusUploaded); err != nil {
 		return err
 	}
 
-	// Increment completed chunks counter
-	completedChunks, totalChunks, err := uc.fileRepo.IncrementCompletedChunks(ctx, uploadID)
+	// Increment uploaded chunks counter
+	uploadedChunks, totalChunks, err := uc.fileRepo.IncrementUploadedChunks(ctx, file.ID)
 	if err != nil {
 		return err
 	}
 
-	// Check if all chunks are completed
-	if completedChunks == totalChunks {
+	// Check if all chunks are uploaded
+	if uploadedChunks == totalChunks {
 		// Update file status to completed
-		if err := uc.fileRepo.UpdateFileStatus(ctx, uploadID, entity.FileStatusUploaded); err != nil {
+		if err := uc.fileRepo.UpdateFileStatus(ctx, file.ID, entity.FileStatusUploaded); err != nil {
 			return err
 		}
 	}
 
+	return nil
+}
+
+// ExecuteFailRecovery handles the failure of a chunk upload
+func (uc *fileUploadUseCase) ExecuteFailRecovery(ctx context.Context, fileID uint64, chunkID uint64) e.CustomError {
+	if err := uc.fileRepo.UpdateFileAndChunkStatus(ctx, fileID, chunkID, entity.FileStatusFailed); err != nil {
+		return err
+	}
 	return nil
 }

@@ -1,0 +1,80 @@
+services:
+  wire:
+    image: golang:1.24-alpine
+    container_name: exec-wire
+    working_dir: /app
+    environment:
+      - GOMODCACHE=/go/pkg/mod
+    volumes:
+      - ./server:/app/server
+      - ./cli:/app/cli
+      - go-mod-cache:/go/pkg/mod
+    command: |
+      sh -c '
+        go install github.com/google/wire/cmd/wire@latest && \
+        cd server/cmd && wire && cd ../.. && \
+        cd cli/cmd && wire
+      '
+
+  test:
+    image: golang:1.24-alpine
+    container_name: exec-test
+    working_dir: /app
+    environment:
+      - GOMODCACHE=/go/pkg/mod
+    volumes:
+      - .:/app
+      - go-mod-cache:/go/pkg/mod
+    command: |
+      sh -c '
+        cd server && go mod tidy && \
+        echo "---------------------------------------" && \
+        echo " Starts running tests for [Server]" && \
+        echo "---------------------------------------" && \
+        go test ./... -cover -shuffle=on && \
+        cd ../ && \
+
+        echo && \
+        cd cli && go mod tidy && \
+        echo "---------------------------------------" && \
+        echo " Starts running tests for [CLI]" && \
+        echo "---------------------------------------" && \
+        go test ./... -cover -shuffle=on
+      '
+
+  clean:
+    image: golang:1.24-alpine
+    container_name: exec-clean
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: |
+      sh -c '
+        echo "Containers, volumes, and networks removed" && \
+        rm -f cli/fs-store 2>/dev/null || true && \
+
+        echo "CLI binary removed" && \
+        rm -f server/coverage.out server/coverage.html 2>/dev/null || true && \
+        rm -f cli/coverage.out cli/coverage.html 2>/dev/null || true && \
+
+        echo "Coverage reports removed"
+      '
+
+  lint:
+    image: golangci/golangci-lint:v2.1.2-alpine
+    container_name: exec-lint
+    working_dir: /app
+    environment:
+      - GOMODCACHE=/go/pkg/mod
+    volumes:
+      - .:/app
+      - go-mod-cache:/go/pkg/mod
+    command: |
+      sh -c '
+        cd server && golangci-lint run ./... && \
+        cd ../ && \
+        cd cli && golangci-lint run ./...
+      '
+
+volumes:
+  go-mod-cache:

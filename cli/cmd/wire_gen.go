@@ -15,9 +15,14 @@ import (
 
 // InitializeApplication initializes the CLI application with dependency injection
 func InitializeApplication() (*Application, error) {
-	uploadCommand := di.UploadCommandProvider()
-	deleteCommand := di.DeleteCommandProvider()
-	listCommand := di.ListCommandProvider()
+	config := di.ConfigProvider()
+	initUploadUsecase := di.InitUploadUsecaseProvider(config)
+	uploadUsecase := di.UploadUsecaseProvider(config)
+	deleteUsecase := di.DeleteFileUsecaseProvider(config)
+	uploadCommand := di.UploadCommandProvider(config, initUploadUsecase, uploadUsecase, deleteUsecase)
+	deleteCommand := di.DeleteCommandProvider(config, deleteUsecase)
+	listUsecase := di.ListUsecaseProvider(config)
+	listCommand := di.ListCommandProvider(config, listUsecase)
 	command := di.RootCommandProvider(uploadCommand, deleteCommand, listCommand)
 	application := &Application{
 		RootCmd: command,

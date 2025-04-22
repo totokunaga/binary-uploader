@@ -54,7 +54,7 @@ The CLI provides the following commands:
 
 ### CLI
 
-- `SERVER_URL` - Server URL (default: http://localhost:18080)
+- `SERVER_URL` - Server URL (default: http://localhost:38080)
 - `CHUNK_SIZE` - Chunk size in bytes (default: 1048576, 1 MiB)
 - `RETRIES` - Number of retries for failed chunk uploads (default: 3)
 

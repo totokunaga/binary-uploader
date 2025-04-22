@@ -30,18 +30,15 @@ func NewFileDeleteHandler(fileDeleteUseCase usecase.FileDeleteUseCase, logger *s
 func (h *FileDeleteHandler) Execute(ctx *gin.Context) {
 	// Get the file name from the URL
 	fileName := ctx.Param("file_name")
-	if fileName == "" {
-		ctx.JSON(http.StatusBadRequest, getErrorResponse(
-			e.NewInvalidInputError(errors.New("file_name parameter is required"), ""),
-			h.logger,
-		))
+	if fileName == "." || fileName == ".." {
+		sendErrorResponse(ctx, h.logger, e.NewInvalidInputError(errors.New("invalid file name"), ""))
 		return
 	}
 
 	// Delete the file
 	err := h.fileDeleteUseCase.Execute(ctx.Request.Context(), fileName)
 	if err != nil {
-		ctx.JSON(err.StatusCode(), getErrorResponse(err, h.logger))
+		sendErrorResponse(ctx, h.logger, err)
 		return
 	}
 

@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"time"
 )
 
 // Config represents the application configuration loaded from environment variables
@@ -13,8 +14,9 @@ type Config struct {
 	MaxBodySize int
 
 	// Storage config
-	BaseStorageDir  string
-	UploadSizeLimit uint64
+	BaseStorageDir      string
+	UploadSizeLimit     uint64
+	UploadTimeoutSecond time.Duration
 
 	// Database config
 	DBHost        string
@@ -36,8 +38,9 @@ func NewConfig() *Config {
 		MaxBodySize: GetEnvInt("MAX_BODY_SIZE", 10*1024*1024), // 10 MiB default
 
 		// Storage config
-		BaseStorageDir:  GetEnv("BASE_STORAGE_DIR", "."),
-		UploadSizeLimit: GetEnvUint64("UPLOAD_SIZE_LIMIT", 100*1024*1024), // 100 MiB default
+		BaseStorageDir:      GetEnv("BASE_STORAGE_DIR", "."),
+		UploadSizeLimit:     GetEnvUint64("UPLOAD_SIZE_LIMIT", 100*1024*1024), // 100 MiB default
+		UploadTimeoutSecond: time.Duration(GetEnvInt("UPLOAD_TIMEOUT", 5)) * time.Second,
 
 		// Database config
 		DBHost:        GetEnv("DB_HOST", "localhost"),

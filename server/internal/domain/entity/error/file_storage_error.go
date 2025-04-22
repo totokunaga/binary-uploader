@@ -18,7 +18,7 @@ func NewFileStorageError(err error, errMsg string) *FileStorageError {
 }
 
 func (e *FileStorageError) Error() string {
-	return e.errMsg
+	return fmt.Sprintf("%s: %v", e.errMsg, e.err)
 }
 
 func (e *FileStorageError) ErrorObject() error {

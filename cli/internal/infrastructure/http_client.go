@@ -9,6 +9,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"time"
+
+	"github.com/tomoya.tokunaga/cli/internal/domain/entity"
 )
 
 // FileServerV1HttpClient is a client for communicating with the file server
@@ -20,7 +22,7 @@ type FileServerV1HttpClient struct {
 // NewFileServerV1HttpClient creates a new client for the remote file server
 func NewFileServerV1HttpClient(serverOrigin string) *FileServerV1HttpClient {
 	if serverOrigin == "" {
-		serverOrigin = "http://localhost:18080"
+		serverOrigin = "http://localhost:38080"
 	}
 
 	return &FileServerV1HttpClient{
@@ -47,20 +49,24 @@ func (c *FileServerV1HttpClient) createRequest(ctx context.Context, method, urlP
 
 // UploadInitRequest represents the request body for initializing an upload
 type UploadInitRequest struct {
-	TotalSize   uint64 `json:"total_size"`
-	TotalChunks uint64 `json:"total_chunks"`
+	TotalSize   int64  `json:"total_size"`
+	TotalChunks int64  `json:"total_chunks"`
+	ChunkSize   int64  `json:"chunk_size"`
+	Checksum    string `json:"checksum"`
+	IsReUpload  bool   `json:"is_reupload"`
 }
 
 // UploadInitResponse represents the response from initializing an upload
 type UploadInitResponse struct {
-	UploadID uint64 `json:"upload_id"`
+	UploadID         uint64                   `json:"upload_id"`
+	MissingChunkInfo *entity.MissingChunkInfo `json:"missing_chunk_info"`
 }
 
 // InitUpload initializes a file upload on the server
-func (c *FileServerV1HttpClient) InitUpload(fileName string, request UploadInitRequest) (uint64, error) {
+func (c *FileServerV1HttpClient) InitUpload(fileName string, request UploadInitRequest) (*UploadInitResponse, error) {
 	requestBody, err := json.Marshal(request)
 	if err != nil {
-		return 0, fmt.Errorf("failed to marshal request body: %w", err)
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -70,35 +76,39 @@ func (c *FileServerV1HttpClient) InitUpload(fileName string, request UploadInitR
 
 	req, err := c.createRequest(ctx, "POST", endpointPath, bytes.NewBuffer(requestBody))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	// Send request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Println("Failed to close response body")
+		}
+	}()
 
 	// Read response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, fmt.Errorf("failed to read response body: %w", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("server returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("server returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Parse response
 	var response UploadInitResponse
 	if err := json.Unmarshal(body, &response); err != nil {
-		return 0, fmt.Errorf("failed to parse response body: %w", err)
+		return nil, fmt.Errorf("failed to parse response body: %w", err)
 	}
 
-	return response.UploadID, nil
+	return &response, nil
 }
 
 // UploadChunk uploads a chunk to the server
@@ -141,7 +151,11 @@ func (c *FileServerV1HttpClient) UploadChunk(uploadID uint64, chunkID int, data 
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Println("Failed to close response body")
+		}
+	}()
 
 	// Read response
 	body, err := io.ReadAll(resp.Body)
@@ -176,7 +190,11 @@ func (c *FileServerV1HttpClient) DeleteFile(fileName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Println("Failed to close response body")
+		}
+	}()
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
@@ -204,7 +222,11 @@ func (c *FileServerV1HttpClient) ListFiles() (*FileInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Println("Failed to close response body")
+		}
+	}()
 
 	// Read response
 	body, err := io.ReadAll(resp.Body)
@@ -224,4 +246,50 @@ func (c *FileServerV1HttpClient) ListFiles() (*FileInfo, error) {
 	}
 
 	return &fileInfos, nil
+}
+
+// IdentifyFile identifies a file on the server
+func (c *FileServerV1HttpClient) GetFileStats(fileName string) (*entity.File, error) {
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Create request to /files endpoint
+	req, err := c.createRequest(ctx, "GET", fmt.Sprintf("/files/%s", fileName), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Send request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Println("Failed to close response body")
+		}
+	}()
+
+	// Read response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Check response status
+	var file entity.File
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	if err := json.Unmarshal(body, &file); err != nil {
+		return nil, fmt.Errorf("failed to parse response body: %w", err)
+	}
+
+	return &file, nil
 }
