@@ -57,17 +57,18 @@ func (uc *fileDeleteUseCase) Execute(ctx context.Context, fileName string) e.Cus
 	wp.Wait()
 
 	// Delete the file directory
-	// TODO: Actual deletion is done by a batch job
 	fileDirPath := filepath.Join(uc.config.BaseStorageDir, fileName)
 	if err := uc.storageRepo.DeleteDirectory(ctx, fileDirPath); err != nil {
 		return err
 	}
 
 	// Delete the file and its chunks (cascade delete)
-	// TODO: update chunk status to DELETED and a batch job will take care of the rest (avoid index calculation overhead)
 	if err := uc.fileRepo.DeleteFileByID(ctx, file.ID); err != nil {
 		return err
 	}
+
+	// Update the available space
+	uc.storageRepo.UpdateAvailableSpace(int64(file.Size))
 
 	return nil
 }

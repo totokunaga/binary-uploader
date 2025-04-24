@@ -1,11 +1,13 @@
 package handler
 
 import (
-	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+
+	"compress/gzip"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tomoya.tokunaga/server/internal/domain/entity"
@@ -132,69 +134,35 @@ func (h *FileUploadHandler) Execute(ctx *gin.Context) {
 		return
 	}
 
-	// Get the file content from the request
-	file, err := ctx.FormFile("file")
-	if err != nil {
-		sendErrorResponse(ctx, h.logger, e.NewInvalidInputError(err, "file is required"))
+	// Setup the reader from request body
+	var reader io.Reader = ctx.Request.Body
+
+	// Check if content is gzip encoded
+	if ctx.GetHeader("Content-Encoding") == "gzip" {
+		gzipReader, err := gzip.NewReader(reader)
+		if err != nil {
+			sendErrorResponse(ctx, h.logger, e.NewInvalidInputError(err, "failed to create gzip reader"))
+			return
+		}
+		defer gzipReader.Close()
+		reader = gzipReader
+	}
+
+	ucErr := h.fileUploadUseCase.Execute(ctx, usecase.FileUploadUseCaseExecuteInput{
+		FileID:      fileID,
+		ChunkNumber: chunkNumber,
+		Reader:      reader,
+	})
+
+	if ucErr == nil {
+		ctx.JSON(http.StatusOK, UploadResponse{Status: "OK"})
 		return
 	}
 
-	// Open the file
-	src, err := file.Open()
-	if err != nil {
-		sendErrorResponse(ctx, h.logger, e.NewInvalidInputError(err, "failed to open file"))
+	// Updates file and chunk status to the failed status
+	if failRecovErr := h.fileUploadUseCase.ExecuteFailRecovery(ctx.Request.Context(), fileID, chunkNumber); failRecovErr != nil {
+		sendErrorResponse(ctx, h.logger, failRecovErr)
 		return
 	}
-	defer func() {
-		if err := src.Close(); err != nil {
-			h.logger.Error("Failed to close file", "error", err)
-		}
-	}()
-
-	// Create a context for the upload usecase, which will be canceled when the client disconnects
-	ucCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Create a channel to receive the upload usecase error
-	ucErrChan := make(chan e.CustomError, 1)
-
-	// Upload the chunk
-	go func() {
-		ucErr := h.fileUploadUseCase.Execute(ucCtx, usecase.FileUploadUseCaseExecuteInput{
-			FileID:      fileID,
-			ChunkNumber: chunkNumber,
-			Reader:      src,
-		})
-		ucErrChan <- ucErr
-	}()
-
-	select {
-	case <-ctx.Done():
-		// Client disconnected
-		// Stop the upload usecase by canceling the context
-		cancel()
-
-		h.logger.Warn("Client disconnected during chunk upload",
-			"file_id", fileID,
-			"chunk_number", chunkNumber,
-			"error", ctx.Err(),
-		)
-		if failRecovErr := h.fileUploadUseCase.ExecuteFailRecovery(context.Background(), fileID, chunkNumber); failRecovErr != nil {
-			sendErrorResponse(ctx, h.logger, failRecovErr)
-			return
-		}
-		return
-	case ucErr := <-ucErrChan:
-		if ucErr == nil {
-			ctx.JSON(http.StatusOK, UploadResponse{Status: "OK"})
-			return
-		}
-
-		// Updates file and chunk status to the failed status
-		if failRecovErr := h.fileUploadUseCase.ExecuteFailRecovery(ctx.Request.Context(), fileID, chunkNumber); failRecovErr != nil {
-			sendErrorResponse(ctx, h.logger, failRecovErr)
-			return
-		}
-		sendErrorResponse(ctx, h.logger, ucErr)
-	}
+	sendErrorResponse(ctx, h.logger, ucErr)
 }

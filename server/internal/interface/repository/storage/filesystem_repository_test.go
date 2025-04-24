@@ -14,7 +14,8 @@ import (
 
 func TestStorageRepository_WriteChunk(t *testing.T) {
 	ctx := context.Background()
-	repo := NewStorageRepository(slog.Default())
+	tempDir := t.TempDir()
+	repo := NewStorageRepository(slog.Default(), tempDir)
 
 	tests := []struct {
 		name        string
@@ -27,7 +28,6 @@ func TestStorageRepository_WriteChunk(t *testing.T) {
 			name:    "Success - Write new chunk",
 			content: "hello world",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				filePath := filepath.Join(tempDir, "subdir", "chunk_0")
 				return filePath, func() { /* TempDir handles cleanup */ }
 			},
@@ -46,7 +46,6 @@ func TestStorageRepository_WriteChunk(t *testing.T) {
 			name:    "Success - Overwrite existing chunk",
 			content: "new content",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				filePath := filepath.Join(tempDir, "chunk_overwrite")
 				err := os.WriteFile(filePath, []byte("old content"), 0644)
 				assert.NoError(t, err)
@@ -84,7 +83,8 @@ func TestStorageRepository_WriteChunk(t *testing.T) {
 
 func TestStorageRepository_DeleteChunk(t *testing.T) {
 	ctx := context.Background()
-	repo := NewStorageRepository(slog.Default())
+	tempDir := t.TempDir()
+	repo := NewStorageRepository(slog.Default(), tempDir)
 
 	tests := []struct {
 		name      string
@@ -95,7 +95,6 @@ func TestStorageRepository_DeleteChunk(t *testing.T) {
 		{
 			name: "Success - Delete existing chunk",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				filePath := filepath.Join(tempDir, "chunk_to_delete")
 				err := os.WriteFile(filePath, []byte("data"), 0644)
 				assert.NoError(t, err)
@@ -111,7 +110,6 @@ func TestStorageRepository_DeleteChunk(t *testing.T) {
 		{
 			name: "Success - Delete non-existent chunk",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				filePath := filepath.Join(tempDir, "non_existent_chunk")
 				return filePath, func() {}
 			},
@@ -148,7 +146,8 @@ func TestStorageRepository_DeleteChunk(t *testing.T) {
 
 func TestStorageRepository_CreateDirectory(t *testing.T) {
 	ctx := context.Background()
-	repo := NewStorageRepository(slog.Default())
+	tempDir := t.TempDir()
+	repo := NewStorageRepository(slog.Default(), tempDir)
 
 	tests := []struct {
 		name      string
@@ -159,7 +158,6 @@ func TestStorageRepository_CreateDirectory(t *testing.T) {
 		{
 			name: "Success - Create new directory",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				dirPath := filepath.Join(tempDir, "new_dir", "subdir")
 				return dirPath, func() {}
 			},
@@ -173,7 +171,6 @@ func TestStorageRepository_CreateDirectory(t *testing.T) {
 		{
 			name: "Success - Create existing directory",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				dirPath := filepath.Join(tempDir, "existing_dir")
 				err := os.Mkdir(dirPath, 0755)
 				assert.NoError(t, err)
@@ -189,7 +186,6 @@ func TestStorageRepository_CreateDirectory(t *testing.T) {
 		{
 			name: "Failure - Path is a file",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				filePath := filepath.Join(tempDir, "existing_file")
 				_, err := os.Create(filePath)
 				assert.NoError(t, err)
@@ -225,7 +221,8 @@ func TestStorageRepository_CreateDirectory(t *testing.T) {
 
 func TestStorageRepository_DeleteDirectory(t *testing.T) {
 	ctx := context.Background()
-	repo := NewStorageRepository(slog.Default())
+	tempDir := t.TempDir()
+	repo := NewStorageRepository(slog.Default(), tempDir)
 
 	tests := []struct {
 		name      string
@@ -236,7 +233,6 @@ func TestStorageRepository_DeleteDirectory(t *testing.T) {
 		{
 			name: "Success - Delete empty directory",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				dirPath := filepath.Join(tempDir, "empty_dir_to_delete")
 				err := os.Mkdir(dirPath, 0755)
 				assert.NoError(t, err)
@@ -252,7 +248,6 @@ func TestStorageRepository_DeleteDirectory(t *testing.T) {
 		{
 			name: "Success - Delete directory with contents",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				dirPath := filepath.Join(tempDir, "dir_with_content")
 				err := os.Mkdir(dirPath, 0755)
 				assert.NoError(t, err)
@@ -271,7 +266,6 @@ func TestStorageRepository_DeleteDirectory(t *testing.T) {
 		{
 			name: "Success - Delete non-existent directory",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				dirPath := filepath.Join(tempDir, "non_existent_dir")
 				return dirPath, func() {}
 			},
@@ -285,7 +279,6 @@ func TestStorageRepository_DeleteDirectory(t *testing.T) {
 		{
 			name: "Failure - Path is a file",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				filePath := filepath.Join(tempDir, "a_file_not_a_dir")
 				_, err := os.Create(filePath)
 				assert.NoError(t, err)
@@ -326,7 +319,8 @@ func TestStorageRepository_DeleteDirectory(t *testing.T) {
 
 func TestStorageRepository_FileExists(t *testing.T) {
 	ctx := context.Background()
-	repo := NewStorageRepository(slog.Default())
+	tempDir := t.TempDir()
+	repo := NewStorageRepository(slog.Default(), tempDir)
 
 	tests := []struct {
 		name       string
@@ -337,7 +331,6 @@ func TestStorageRepository_FileExists(t *testing.T) {
 		{
 			name: "Success - File exists",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				filePath := filepath.Join(tempDir, "existing_file.txt")
 				_, err := os.Create(filePath)
 				assert.NoError(t, err)
@@ -349,7 +342,6 @@ func TestStorageRepository_FileExists(t *testing.T) {
 		{
 			name: "Success - File does not exist",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				filePath := filepath.Join(tempDir, "non_existent_file.txt")
 				return filePath, func() {}
 			},
@@ -359,7 +351,6 @@ func TestStorageRepository_FileExists(t *testing.T) {
 		{
 			name: "Success - Path is a directory", // os.Stat returns info for directories too
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				dirPath := filepath.Join(tempDir, "a_directory")
 				err := os.Mkdir(dirPath, 0755)
 				assert.NoError(t, err)
@@ -390,7 +381,8 @@ func TestStorageRepository_FileExists(t *testing.T) {
 
 func TestStorageRepository_DeleteFile(t *testing.T) {
 	ctx := context.Background()
-	repo := NewStorageRepository(slog.Default())
+	tempDir := t.TempDir()
+	repo := NewStorageRepository(slog.Default(), tempDir)
 
 	tests := []struct {
 		name      string
@@ -401,7 +393,6 @@ func TestStorageRepository_DeleteFile(t *testing.T) {
 		{
 			name: "Success - Delete existing file",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				filePath := filepath.Join(tempDir, "file_to_delete")
 				err := os.WriteFile(filePath, []byte("data"), 0644)
 				assert.NoError(t, err)
@@ -417,7 +408,6 @@ func TestStorageRepository_DeleteFile(t *testing.T) {
 		{
 			name: "Success - Delete non-existent file",
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				filePath := filepath.Join(tempDir, "non_existent_file")
 				return filePath, func() {}
 			},
@@ -431,7 +421,6 @@ func TestStorageRepository_DeleteFile(t *testing.T) {
 		{
 			name: "Failure - Path is a directory", // os.Remove fails on non-empty directories
 			setup: func(t *testing.T) (string, func()) {
-				tempDir := t.TempDir()
 				dirPath := filepath.Join(tempDir, "a_dir_not_a_file")
 				err := os.Mkdir(dirPath, 0755)
 				assert.NoError(t, err)
@@ -472,4 +461,75 @@ func TestStorageRepository_DeleteFile(t *testing.T) {
 			_ = cleanup
 		})
 	}
+}
+
+func TestStorageRepository_GetAvailableSpace(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	// Ensure the directory exists before creating the repository
+	_, err := os.Stat(tempDir)
+	assert.NoError(t, err, "Temp directory should exist")
+
+	repo := NewStorageRepository(slog.Default(), tempDir)
+
+	// Test getting the available space
+	available := repo.GetAvailableSpace(ctx, tempDir)
+	assert.NotZero(t, available, "Available space should not be zero")
+}
+
+func TestStorageRepository_UpdateAvailableSpace(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	repo := NewStorageRepository(slog.Default(), tempDir)
+
+	// Get initial available space
+	initialSpace := repo.GetAvailableSpace(ctx, tempDir)
+
+	// Test reducing space
+	sizeReduction := int64(1024 * 1024) // 1MB
+	repo.UpdateAvailableSpace(-sizeReduction)
+
+	// Verify space was reduced
+	reducedSpace := repo.GetAvailableSpace(ctx, tempDir)
+	assert.Equal(t, initialSpace-uint64(sizeReduction), reducedSpace, "Space should be reduced by 1MB")
+
+	// Test increasing space
+	repo.UpdateAvailableSpace(sizeReduction)
+
+	// Verify space was restored
+	restoredSpace := repo.GetAvailableSpace(ctx, tempDir)
+	assert.Equal(t, initialSpace, restoredSpace, "Space should be restored to initial value")
+
+	// Test underflow protection
+	hugeReduction := int64(initialSpace * 2) // More than available
+	repo.UpdateAvailableSpace(-hugeReduction)
+
+	// Verify space is zero but doesn't underflow
+	finalSpace := repo.GetAvailableSpace(ctx, tempDir)
+	assert.Zero(t, finalSpace, "Space should be zero after large reduction")
+}
+
+func TestStorageRepository_InitWithNonExistentDirectory(t *testing.T) {
+	// Create a temp base dir
+	tempBase := t.TempDir()
+
+	// Define a non-existent subdirectory
+	nonExistentDir := filepath.Join(tempBase, "storage", "uploads")
+
+	// Verify directory doesn't exist yet
+	_, err := os.Stat(nonExistentDir)
+	assert.True(t, os.IsNotExist(err), "Directory should not exist before test")
+
+	// Create repository - this should create the directory
+	repo := NewStorageRepository(slog.Default(), nonExistentDir)
+
+	// Verify directory was created
+	dirInfo, err := os.Stat(nonExistentDir)
+	assert.NoError(t, err, "Directory should exist after repository creation")
+	assert.True(t, dirInfo.IsDir(), "Path should be a directory")
+
+	// Verify we can get available space from the new directory
+	available := repo.GetAvailableSpace(context.Background(), nonExistentDir)
+	assert.NotZero(t, available, "Available space should not be zero")
 }

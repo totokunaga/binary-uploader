@@ -2,11 +2,11 @@ package infrastructure
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"time"
 
@@ -20,13 +20,9 @@ type FileServerV1HttpClient struct {
 }
 
 // NewFileServerV1HttpClient creates a new client for the remote file server
-func NewFileServerV1HttpClient(serverOrigin string) *FileServerV1HttpClient {
-	if serverOrigin == "" {
-		serverOrigin = "http://localhost:38080"
-	}
-
+func NewFileServerV1HttpClient() *FileServerV1HttpClient {
 	return &FileServerV1HttpClient{
-		baseURL: fmt.Sprintf("%s/api/v1", serverOrigin),
+		baseURL: fmt.Sprintf("%s/api/v1", entity.DefaultServerURL),
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
@@ -63,16 +59,16 @@ type UploadInitResponse struct {
 }
 
 // InitUpload initializes a file upload on the server
-func (c *FileServerV1HttpClient) InitUpload(fileName string, request UploadInitRequest) (*UploadInitResponse, error) {
+func (c *FileServerV1HttpClient) InitUpload(ctx context.Context, fileName string, request UploadInitRequest) (*UploadInitResponse, error) {
 	requestBody, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	endpointPath := fmt.Sprintf("/upload/init/%s", fileName)
+	endpointPath := fmt.Sprintf("/files/upload/init/%s", fileName)
 
 	req, err := c.createRequest(ctx, "POST", endpointPath, bytes.NewBuffer(requestBody))
 	if err != nil {
@@ -112,39 +108,52 @@ func (c *FileServerV1HttpClient) InitUpload(fileName string, request UploadInitR
 }
 
 // UploadChunk uploads a chunk to the server
-func (c *FileServerV1HttpClient) UploadChunk(uploadID uint64, chunkID int, data []byte) error {
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
+func (c *FileServerV1HttpClient) UploadChunk(ctx context.Context, uploadID uint64, chunkID int, data []byte) error {
+	// Retrieve flag values from context
+	compressionEnabled := ctx.Value(entity.CompressionEnabledKey).(bool)
 
-	// Create a form file field
-	formFile, err := writer.CreateFormFile("file", fmt.Sprintf("%d-%d", uploadID, chunkID))
-	if err != nil {
-		return fmt.Errorf("failed to create form file: %w", err)
-	}
+	var requestBody io.Reader
+	var contentEncoding string
 
-	// Write the data to the form file
-	if _, err := formFile.Write(data); err != nil {
-		return fmt.Errorf("failed to write data to form file: %w", err)
-	}
+	if compressionEnabled {
+		// Compress data with gzip
+		var buf bytes.Buffer
+		gzipWriter := gzip.NewWriter(&buf)
 
-	// Close the writer
-	if err := writer.Close(); err != nil {
-		return fmt.Errorf("failed to close writer: %w", err)
+		if _, err := gzipWriter.Write(data); err != nil {
+			return fmt.Errorf("failed to write data to gzip writer: %w", err)
+		}
+
+		// Close the gzip writer to flush any pending data
+		if err := gzipWriter.Close(); err != nil {
+			return fmt.Errorf("failed to close gzip writer: %w", err)
+		}
+
+		requestBody = &buf
+		contentEncoding = "gzip"
+	} else {
+		// Use uncompressed data
+		requestBody = bytes.NewReader(data)
 	}
 
 	// Create URL using helper
-	endpointPath := fmt.Sprintf("/upload/%d/%d", uploadID, chunkID)
+	endpointPath := fmt.Sprintf("/files/upload/%d/%d", uploadID, chunkID)
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	// Create request
-	req, err := c.createRequest(ctx, "POST", endpointPath, &buf)
+	req, err := c.createRequest(ctx, "POST", endpointPath, requestBody)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Set headers for application/octet-stream
+	req.Header.Set("Content-Type", "application/octet-stream")
+	if contentEncoding != "" {
+		req.Header.Set("Content-Encoding", contentEncoding)
+	}
 
 	// Send request
 	resp, err := c.httpClient.Do(req)
@@ -172,11 +181,11 @@ func (c *FileServerV1HttpClient) UploadChunk(uploadID uint64, chunkID int, data 
 }
 
 // DeleteFile deletes a file from the server
-func (c *FileServerV1HttpClient) DeleteFile(fileName string) error {
-	endpointPath := fmt.Sprintf("/%s", fileName)
+func (c *FileServerV1HttpClient) DeleteFile(ctx context.Context, fileName string) error {
+	endpointPath := fmt.Sprintf("/files/%s", fileName)
 
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	// Create request
@@ -206,9 +215,9 @@ func (c *FileServerV1HttpClient) DeleteFile(fileName string) error {
 }
 
 // ListFiles lists all files on the server
-func (c *FileServerV1HttpClient) ListFiles() (*FileInfo, error) {
+func (c *FileServerV1HttpClient) ListFiles(ctx context.Context) (*FileInfo, error) {
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	// Create request to /files endpoint
@@ -249,9 +258,9 @@ func (c *FileServerV1HttpClient) ListFiles() (*FileInfo, error) {
 }
 
 // IdentifyFile identifies a file on the server
-func (c *FileServerV1HttpClient) GetFileStats(fileName string) (*entity.File, error) {
+func (c *FileServerV1HttpClient) GetFileStats(ctx context.Context, fileName string) (*entity.File, error) {
 	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	// Create request to /files endpoint

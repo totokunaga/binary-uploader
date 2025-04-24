@@ -113,6 +113,32 @@ func (mr *MockFileStorageRepositoryMockRecorder) FileExists(ctx, filePath any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FileExists", reflect.TypeOf((*MockFileStorageRepository)(nil).FileExists), ctx, filePath)
 }
 
+// GetAvailableSpace mocks base method.
+func (m *MockFileStorageRepository) GetAvailableSpace(ctx context.Context, dirPath string) uint64 {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAvailableSpace", ctx, dirPath)
+	ret0, _ := ret[0].(uint64)
+	return ret0
+}
+
+// GetAvailableSpace indicates an expected call of GetAvailableSpace.
+func (mr *MockFileStorageRepositoryMockRecorder) GetAvailableSpace(ctx, dirPath any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAvailableSpace", reflect.TypeOf((*MockFileStorageRepository)(nil).GetAvailableSpace), ctx, dirPath)
+}
+
+// UpdateAvailableSpace mocks base method.
+func (m *MockFileStorageRepository) UpdateAvailableSpace(sizeChange int64) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "UpdateAvailableSpace", sizeChange)
+}
+
+// UpdateAvailableSpace indicates an expected call of UpdateAvailableSpace.
+func (mr *MockFileStorageRepositoryMockRecorder) UpdateAvailableSpace(sizeChange any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAvailableSpace", reflect.TypeOf((*MockFileStorageRepository)(nil).UpdateAvailableSpace), sizeChange)
+}
+
 // WriteChunk mocks base method.
 func (m *MockFileStorageRepository) WriteChunk(ctx context.Context, reader io.Reader, filePath string) error.CustomError {
 	m.ctrl.T.Helper()

@@ -10,7 +10,7 @@ services:
       - MYSQL_USER=${DB_USER}
       - MYSQL_PASSWORD=${DB_PASSWORD}
     ports:
-      - "33306:3306"
+      - "${HOST_MYSQL_PORT}:${DB_PORT}"
     volumes:
       - mysql-data:/var/lib/mysql
       - ./db/init:/docker-entrypoint-initdb.d
@@ -30,8 +30,8 @@ services:
     env_file: 
       - ./.env
     environment:
-      - DB_HOST=mysql
-      - DB_PORT=3306
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
     volumes:
       - ./db/migrations:/app/db/migrations
     depends_on:
@@ -49,13 +49,19 @@ services:
     env_file: 
       - ./.env
     environment:
-      - DB_HOST=mysql
-      - DB_PORT=3306
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
       - BASE_STORAGE_DIR=${BASE_STORAGE_DIR}
     ports:
-      - "38080:${PORT}"
+      - "${HOST_FILE_SERVER_PORT}:${PORT}"
     volumes:
       - file-store-storage:${BASE_STORAGE_DIR}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:${PORT}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     depends_on:
       migrator:
         condition: service_completed_successfully

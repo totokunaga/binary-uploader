@@ -29,6 +29,6 @@ CREATE TABLE IF NOT EXISTS `file_chunks` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  INDEX `idx_file_chunks_parent` (`parent_id`),
+  INDEX `idx_file_chunks_parent_status` (`parent_id`, `status`),
   CONSTRAINT `fk_file_chunks_parent` FOREIGN KEY (`parent_id`) REFERENCES `files` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci; 

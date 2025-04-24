@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -11,15 +12,13 @@ import (
 
 // InitUploadUsecase handles initializing file uploads
 type InitUploadUsecase struct {
-	config               *entity.Config
 	fileServerHttpClient infrastructure.FileServerHttpClient
 }
 
 // NewInitUploadUsecase creates a new init upload usecase
-func NewInitUploadUsecase(config *entity.Config) *InitUploadUsecase {
-	client := infrastructure.NewFileServerV1HttpClient(config.ServerURL)
+func NewInitUploadUsecase() *InitUploadUsecase {
+	client := infrastructure.NewFileServerV1HttpClient()
 	return &InitUploadUsecase{
-		config:               config,
 		fileServerHttpClient: client,
 	}
 }
@@ -47,7 +46,7 @@ const (
 )
 
 // Execute prechecks the file before initializing a file upload on the server
-func (s *InitUploadUsecase) ExecutePrecheck(filePath string, targetFileName string) (action PostPrecheckAction, output *UploadPrecheckUsecaseOutput, err error) {
+func (s *InitUploadUsecase) ExecutePrecheck(ctx context.Context, filePath string, targetFileName string) (action PostPrecheckAction, output *UploadPrecheckUsecaseOutput, err error) {
 	_, fileSize, err := checkLocalFileExists(filePath)
 	if err != nil {
 		return ReturnError, nil, err
@@ -64,7 +63,7 @@ func (s *InitUploadUsecase) ExecutePrecheck(filePath string, targetFileName stri
 	}
 
 	// checks the existence of the file on the server using targetFileName
-	fileStats, err := s.fileServerHttpClient.GetFileStats(targetFileName)
+	fileStats, err := s.fileServerHttpClient.GetFileStats(ctx, targetFileName)
 	if err != nil {
 		return ReturnError, nil, fmt.Errorf("failed to get file stats for '%s': %w", targetFileName, err)
 	}
@@ -105,7 +104,7 @@ func (s *InitUploadUsecase) ExecutePrecheck(filePath string, targetFileName stri
 }
 
 // Execute initializes a file upload on the server
-func (s *InitUploadUsecase) Execute(filePath string, targetFileName string, originalChecksum string, chunkSize int64, isReUpload bool) (*UploadUsecaseOutput, error) {
+func (s *InitUploadUsecase) Execute(ctx context.Context, filePath string, targetFileName string, originalChecksum string, chunkSize int64, isReUpload bool) (*UploadUsecaseOutput, error) {
 	_, fileSize, err := checkLocalFileExists(filePath)
 	if err != nil {
 		return nil, err
@@ -129,7 +128,7 @@ func (s *InitUploadUsecase) Execute(filePath string, targetFileName string, orig
 		Checksum:    checksum,
 		IsReUpload:  isReUpload,
 	}
-	res, err := s.fileServerHttpClient.InitUpload(targetFileName, reqBody)
+	res, err := s.fileServerHttpClient.InitUpload(ctx, targetFileName, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize upload for '%s': %w", targetFileName, err)
 	}

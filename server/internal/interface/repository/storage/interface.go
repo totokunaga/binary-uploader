@@ -26,4 +26,11 @@ type FileStorageRepository interface {
 
 	// DeleteFile deletes a file at the given path
 	DeleteFile(ctx context.Context, filePath string) e.CustomError
+
+	// GetAvailableSpace returns the available space in bytes at the given path
+	GetAvailableSpace(ctx context.Context, dirPath string) uint64
+
+	// UpdateAvailableSpace updates the available space by adding or subtracting the given size in bytes
+	// size should be positive when adding space (file deleted) and negative when removing space (file added)
+	UpdateAvailableSpace(sizeChange int64)
 }

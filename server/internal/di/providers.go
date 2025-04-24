@@ -42,7 +42,12 @@ func FileRepositoryProvider(db *gorm.DB) db_repo.FileRepository {
 }
 
 func StorageRepositoryProvider(logger *slog.Logger) fs_repo.FileStorageRepository {
-	return fs_repo.NewStorageRepository(logger)
+	// Get base dir path from env var or use a default
+	baseDir := os.Getenv("STORAGE_BASE_DIR")
+	if baseDir == "" {
+		baseDir = "/tmp/file-uploads" // Default fallback
+	}
+	return fs_repo.NewStorageRepository(logger, baseDir)
 }
 
 // ----------------------------------------------------------------
@@ -54,7 +59,7 @@ func FileGetUseCaseProvider(fileRepo db_repo.FileRepository) usecase.FileGetUseC
 }
 
 func FileUploadUseCaseProvider(fileRepo db_repo.FileRepository, storageRepo fs_repo.FileStorageRepository, config *entity.Config) usecase.FileUploadUseCase {
-	return usecase.NewFileUploadUseCase(fileRepo, storageRepo, config.BaseStorageDir, config.UploadSizeLimit)
+	return usecase.NewFileUploadUseCase(fileRepo, storageRepo, config.BaseStorageDir)
 }
 
 func FileDeleteUseCaseProvider(fileRepo db_repo.FileRepository, storageRepo fs_repo.FileStorageRepository, config *entity.Config) usecase.FileDeleteUseCase {

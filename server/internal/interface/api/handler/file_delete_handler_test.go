@@ -89,11 +89,11 @@ func TestFileDeleteHandler_Execute(t *testing.T) {
 			}
 
 			h, router := setupTestFileDeleteHandler(t, mockUseCase)
-			router.DELETE("/:file_name", h.Execute)
+			router.DELETE("/files/:file_name", h.Execute)
 
 			// Executing the request
 			w := httptest.NewRecorder()
-			url := "/" + tc.fileNameParam
+			url := "/files/" + tc.fileNameParam
 
 			req, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete, url, nil)
 			router.ServeHTTP(w, req)

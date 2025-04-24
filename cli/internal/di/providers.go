@@ -5,7 +5,6 @@ import (
 
 	"github.com/google/wire"
 	"github.com/spf13/cobra"
-	"github.com/tomoya.tokunaga/cli/internal/domain/entity"
 	"github.com/tomoya.tokunaga/cli/internal/interface/command"
 	"github.com/tomoya.tokunaga/cli/internal/usecase"
 	"golang.org/x/exp/slog"
@@ -15,11 +14,6 @@ import (
 type UploadCommand *cobra.Command
 type DeleteCommand *cobra.Command
 type ListCommand *cobra.Command
-
-// ConfigProvider provides the application configuration
-func ConfigProvider() *entity.Config {
-	return entity.NewServiceConfig()
-}
 
 // LoggerProvider provides the application logger
 func LoggerProvider() *slog.Logger {
@@ -31,35 +25,35 @@ func LoggerProvider() *slog.Logger {
 // ----------------------------------------------------------------
 // Usecase Providers
 // ----------------------------------------------------------------
-func InitUploadUsecaseProvider(config *entity.Config) *usecase.InitUploadUsecase {
-	return usecase.NewInitUploadUsecase(config)
+func InitUploadUsecaseProvider() *usecase.InitUploadUsecase {
+	return usecase.NewInitUploadUsecase()
 }
 
-func UploadUsecaseProvider(config *entity.Config) *usecase.UploadUsecase {
-	return usecase.NewUploadUsecase(config)
+func UploadUsecaseProvider() *usecase.UploadUsecase {
+	return usecase.NewUploadUsecase()
 }
 
-func DeleteFileUsecaseProvider(config *entity.Config) *usecase.DeleteUsecase {
-	return usecase.NewDeleteUsecase(config)
+func DeleteFileUsecaseProvider() *usecase.DeleteUsecase {
+	return usecase.NewDeleteUsecase()
 }
 
-func ListUsecaseProvider(config *entity.Config) *usecase.ListUsecase {
-	return usecase.NewListUsecase(config)
+func ListUsecaseProvider() *usecase.ListUsecase {
+	return usecase.NewListUsecase()
 }
 
 // UploadCommandProvider provides the upload command
-func UploadCommandProvider(config *entity.Config, initUploadUsecase *usecase.InitUploadUsecase, uploadUsecase *usecase.UploadUsecase, deleteFileUsecase *usecase.DeleteUsecase) UploadCommand {
-	return UploadCommand(command.NewUploadCommandHandler(config, initUploadUsecase, uploadUsecase, deleteFileUsecase).Execute())
+func UploadCommandProvider(initUploadUsecase *usecase.InitUploadUsecase, uploadUsecase *usecase.UploadUsecase, deleteFileUsecase *usecase.DeleteUsecase) UploadCommand {
+	return UploadCommand(command.NewUploadCommandHandler(initUploadUsecase, uploadUsecase, deleteFileUsecase).Execute())
 }
 
 // DeleteCommandProvider provides the delete command
-func DeleteCommandProvider(config *entity.Config, deleteUsecase *usecase.DeleteUsecase) DeleteCommand {
-	return DeleteCommand(command.NewDeleteCommandHandler(config, deleteUsecase).Execute())
+func DeleteCommandProvider(deleteUsecase *usecase.DeleteUsecase) DeleteCommand {
+	return DeleteCommand(command.NewDeleteCommandHandler(deleteUsecase).Execute())
 }
 
 // ListCommandProvider provides the list command
-func ListCommandProvider(config *entity.Config, listUsecase *usecase.ListUsecase) ListCommand {
-	return ListCommand(command.NewListCommandHandler(config, listUsecase).Execute())
+func ListCommandProvider(listUsecase *usecase.ListUsecase) ListCommand {
+	return ListCommand(command.NewListCommandHandler(listUsecase).Execute())
 }
 
 // RootCommandProvider provides the root command with all subcommands
@@ -67,13 +61,9 @@ func RootCommandProvider(uploadCmd UploadCommand, deleteCmd DeleteCommand, listC
 	// Create root command
 	rootCmd := &cobra.Command{
 		Use:   "fs-store",
-		Short: "A command-line interface for the file storage server",
-		Long:  `A command-line interface for interacting with the file storage server. It allows you to upload, delete, and list files.`,
+		Short: "Command-line interface for the file storage server",
+		Long:  `Command-line interface for interacting with the file storage server to upload, delete, and list files.`,
 	}
-
-	// Add global flags
-	rootCmd.PersistentFlags().String("server", "http://localhost:38080", "Server origin URL")
-	rootCmd.PersistentFlags().Int("concurrency", 5, "Maximum number of concurrent operations")
 
 	// Add commands
 	rootCmd.AddCommand((*cobra.Command)(uploadCmd))
@@ -85,7 +75,6 @@ func RootCommandProvider(uploadCmd UploadCommand, deleteCmd DeleteCommand, listC
 
 // CLIProvider provides sets for dependency injection
 var CLIProvider = wire.NewSet(
-	ConfigProvider,
 	LoggerProvider,
 	// Usecase providers
 	InitUploadUsecaseProvider,

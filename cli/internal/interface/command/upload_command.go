@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
@@ -12,20 +13,17 @@ import (
 )
 
 type UploadCommandHandler struct {
-	config            *entity.Config
 	initUploadUsecase *usecase.InitUploadUsecase
 	uploadUsecase     *usecase.UploadUsecase
 	deleteUsecase     *usecase.DeleteUsecase
 }
 
 func NewUploadCommandHandler(
-	config *entity.Config,
 	initUploadUsecase *usecase.InitUploadUsecase,
 	uploadUsecase *usecase.UploadUsecase,
 	deleteUsecase *usecase.DeleteUsecase,
 ) *UploadCommandHandler {
 	return &UploadCommandHandler{
-		config:            config,
 		initUploadUsecase: initUploadUsecase,
 		uploadUsecase:     uploadUsecase,
 		deleteUsecase:     deleteUsecase,
@@ -34,9 +32,11 @@ func NewUploadCommandHandler(
 
 func (h *UploadCommandHandler) Execute() *cobra.Command {
 	var (
-		retries   int
-		chunkSize int64
-		fileName  string
+		concurrency        int
+		retries            int
+		chunkSize          int64
+		fileName           string
+		compressionEnabled bool
 	)
 
 	cmd := &cobra.Command{
@@ -47,6 +47,14 @@ func (h *UploadCommandHandler) Execute() *cobra.Command {
 			// There's no need to check the existence of the first argument because cobra.ExactArgs(1) handles it
 			filePath := args[0]
 
+			// Retrieve context from command
+			ctx := cmd.Context()
+
+			// Add command parameters to context
+			ctx = context.WithValue(ctx, entity.ConcurrencyKey, concurrency)
+			ctx = context.WithValue(ctx, entity.RetriesKey, retries)
+			ctx = context.WithValue(ctx, entity.CompressionEnabledKey, compressionEnabled)
+
 			// Uses the user-preferred file name for this upload if specified
 			targetFileName := fileName
 			if targetFileName == "" {
@@ -54,7 +62,7 @@ func (h *UploadCommandHandler) Execute() *cobra.Command {
 			}
 
 			// Checks if there's a file with the same name on the server
-			postPrecheckAction, precheckOutput, err := h.initUploadUsecase.ExecutePrecheck(filePath, targetFileName)
+			postPrecheckAction, precheckOutput, err := h.initUploadUsecase.ExecutePrecheck(ctx, filePath, targetFileName)
 			if err != nil {
 				return fmt.Errorf("[ERROR] failed to initialize upload: %w", err)
 			}
@@ -75,14 +83,14 @@ func (h *UploadCommandHandler) Execute() *cobra.Command {
 			case usecase.ProceedWithInit, usecase.ProceedWithReUpload:
 				// When there's no conflicting file exists on the file server, or the file with a same name and same contents were tried to be
 				// uploaded but encoutered some problems before. Sends the upload-init request
-				uploadInitOutput, err = h.initUploadUsecase.Execute(filePath, targetFileName, precheckOutput.Checksum, chunkSize, isReUpload)
+				uploadInitOutput, err = h.initUploadUsecase.Execute(ctx, filePath, targetFileName, precheckOutput.Checksum, chunkSize, isReUpload)
 				if err != nil {
 					return fmt.Errorf("[ERROR] failed to initialize upload: %w", err)
 				}
 			case usecase.SuggestExistingEntryDeletion:
 				// When there's a conflicting file exists on the file server (e.g. a file with the same name but different contents)
 				// Asks the user if they want to delete the conflicting file on the file server and retry the upload
-				forceDeleted, err := h.handleFileConflict(targetFileName)
+				forceDeleted, err := h.handleFileConflict(ctx, targetFileName)
 				if err != nil {
 					return err
 				}
@@ -91,7 +99,7 @@ func (h *UploadCommandHandler) Execute() *cobra.Command {
 					return nil
 				}
 				// Sends the upload-init request for the target file (the rest of the process is same as ProceedWithInit and ProceedWithReUpload)
-				uploadInitOutput, err = h.initUploadUsecase.Execute(filePath, targetFileName, precheckOutput.Checksum, chunkSize, isReUpload)
+				uploadInitOutput, err = h.initUploadUsecase.Execute(ctx, filePath, targetFileName, precheckOutput.Checksum, chunkSize, isReUpload)
 				if err != nil {
 					return fmt.Errorf("[ERROR] failed to initialize upload: %w", err)
 				}
@@ -121,15 +129,16 @@ func (h *UploadCommandHandler) Execute() *cobra.Command {
 			)
 
 			// Uploads the file to the file server chunk by chunk
-			err = h.uploadUsecase.Execute(&usecase.UploadUsecaseInput{
+			err = h.uploadUsecase.Execute(ctx, &usecase.UploadUsecaseInput{
 				UploadID:              uploadInitOutput.UploadID,
 				FilePath:              filePath,
+				ChunkSize:             chunkSize,
 				IsReUpload:            isReUpload,
 				MissingChunkNumberMap: uploadInitOutput.MissingChunkNumberMap,
 				ProgressCb:            func(size int64) { _ = bar.Add64(size) },
 			})
 			if err != nil {
-				deleteErr := h.deleteUsecase.Execute(targetFileName)
+				deleteErr := h.deleteUsecase.Execute(ctx, targetFileName)
 				if deleteErr != nil {
 					return fmt.Errorf("[ERROR] %w", deleteErr)
 				}
@@ -142,13 +151,14 @@ func (h *UploadCommandHandler) Execute() *cobra.Command {
 	}
 
 	cmd.Flags().IntVarP(&retries, "retries", "r", entity.DefaultRetries, "Number of retries for failed chunk uploads")
-	cmd.Flags().Int64VarP(&chunkSize, "chunk-size", "c", entity.DefaultChunkSize, "Chunk size in bytes")
+	cmd.Flags().IntVarP(&concurrency, "concurrency", "c", entity.DefaultMaxConcurrency, "Maximum number of concurrent operations")
+	cmd.Flags().Int64VarP(&chunkSize, "chunk-size", "s", entity.DefaultChunkSize, "Chunk size in bytes")
 	cmd.Flags().StringVarP(&fileName, "file-name", "n", "", "Specify the file name to be used on the server")
-
+	cmd.Flags().BoolVarP(&compressionEnabled, "compression", "z", entity.DefaultCompressionEnabled, "Enable gzip compression for the file (data will be decompressed on the file server)")
 	return cmd
 }
 
-func (h *UploadCommandHandler) handleFileConflict(targetFileName string) (bool, error) {
+func (h *UploadCommandHandler) handleFileConflict(ctx context.Context, targetFileName string) (bool, error) {
 	// Asks the user if they want to delete the conflicting file on the file server and retry the upload
 	fmt.Printf("[ERROR] A confilcting file (a file with the same name but different contents) is found on the file server\n")
 	fmt.Printf("* Do you want to delete the conflicting file and proceed with the upload? (y/n): ")
@@ -163,7 +173,7 @@ func (h *UploadCommandHandler) handleFileConflict(targetFileName string) (bool, 
 
 	if input == "y" || input == "Y" {
 		fmt.Printf("Startting to delete the conflicting file \"%s\" on the file server...\n", targetFileName)
-		if delErr := h.deleteUsecase.Execute(targetFileName); delErr != nil {
+		if delErr := h.deleteUsecase.Execute(ctx, targetFileName); delErr != nil {
 			return false, fmt.Errorf("[ERROR] failed to delete the conflicting file \"%s\": %w", targetFileName, delErr)
 		}
 		fmt.Printf("Successfully deleted the conflicting file\n\n")

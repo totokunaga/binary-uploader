@@ -7,11 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -175,12 +173,12 @@ func TestFileUploadHandler_ExecuteInit(t *testing.T) {
 
 			h, router := setupTestFileUploadHandler(t, mockUseCase)
 			// Define route with file_name parameter
-			router.POST("/upload/:file_name/init", h.ExecuteInit)
+			router.POST("/files/upload/:file_name/init", h.ExecuteInit)
 
 			w := httptest.NewRecorder()
-			url := "/upload/" + tc.fileNameParam + "/init"
+			url := "/files/upload/" + tc.fileNameParam + "/init"
 			if tc.fileNameParam == "" {
-				url = "/upload//init" // Simulate empty param
+				url = "/files/upload//init" // Simulate empty param
 			}
 
 			// Marshal request body to JSON
@@ -279,16 +277,6 @@ func TestFileUploadHandler_Execute(t *testing.T) {
 			expectedErrorMsg: "invalid chunk ID: invalid-chunk",
 		},
 		{
-			name:             "Error - Missing file form field",
-			fileIDParam:      strconv.FormatUint(mockFileID, 10),
-			chunkNumberParam: strconv.FormatUint(mockChunkNumber, 10),
-			fileContent:      "", // Simulate missing file by not adding the form field later
-			setupMock:        nil,
-			expectedStatus:   http.StatusBadRequest,
-			expectError:      true,
-			expectedErrorMsg: "file is required",
-		},
-		{
 			name:             "Error - Usecase execute error (with fail recovery)",
 			fileIDParam:      strconv.FormatUint(mockFileID, 10),
 			chunkNumberParam: strconv.FormatUint(mockChunkNumber, 10),
@@ -333,31 +321,20 @@ func TestFileUploadHandler_Execute(t *testing.T) {
 			}
 
 			h, router := setupTestFileUploadHandler(t, mockUseCase)
-			router.POST("/upload/:file_id/:chunk_number", h.Execute)
+			router.POST("/files/upload/:file_id/:chunk_number", h.Execute)
 
 			w := httptest.NewRecorder()
-			url := fmt.Sprintf("/upload/%s/%s", tc.fileIDParam, tc.chunkNumberParam)
+			url := fmt.Sprintf("/files/upload/%s/%s", tc.fileIDParam, tc.chunkNumberParam)
 
-			// Create multipart request body
-			body := new(bytes.Buffer)
-			writer := multipart.NewWriter(body)
-
-			// Only create form if content expected or testing missing field
-			if tc.fileContent != "" {
-				part, err := writer.CreateFormFile("file", "testchunk.dat")
-				require.NoError(t, err)
-				_, err = io.Copy(part, strings.NewReader(tc.fileContent))
-				require.NoError(t, err)
-			}
-			err := writer.Close()
-			require.NoError(t, err)
+			// Create request body with application/octet-stream
+			body := bytes.NewBufferString(tc.fileContent)
 
 			// Create context for potential cancellation
 			reqCtx, cancel := context.WithCancel(context.Background())
 			defer cancel() // Ensure cancel is called eventually
 
 			req, _ := http.NewRequestWithContext(reqCtx, http.MethodPost, url, body)
-			req.Header.Set("Content-Type", writer.FormDataContentType())
+			req.Header.Set("Content-Type", "application/octet-stream")
 
 			router.ServeHTTP(w, req)
 

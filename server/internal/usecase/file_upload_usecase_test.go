@@ -28,8 +28,7 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 	mockStorageRepo := mock.NewMockFileStorageRepository(mockCtrl)
 
 	baseStorageDir := "/test/uploads"
-	uploadSizeLimit := uint64(1024 * 1024 * 100) // 100MB
-	uc := usecase.NewFileUploadUseCase(mockFileRepo, mockStorageRepo, baseStorageDir, uploadSizeLimit)
+	uc := usecase.NewFileUploadUseCase(mockFileRepo, mockStorageRepo, baseStorageDir)
 
 	ctx := context.Background()
 	testFileName := "new_file.dat"
@@ -41,10 +40,23 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 	fileDirPath := filepath.Join(baseStorageDir, testFileName)
 	now := time.Now()
 
+	// Available storage space
+	availableSpace := uint64(10 * 1024 * 1024) // 10MB
+
 	newFileInput := usecase.FileUploadUseCaseExecuteInitInput{
 		FileName:    testFileName,
 		Checksum:    testChecksum,
 		TotalSize:   testTotalSize,
+		TotalChunks: testTotalChunks,
+		ChunkSize:   testChunkSize,
+		IsReUpload:  false,
+	}
+
+	// Input with size larger than available space
+	largeFileInput := usecase.FileUploadUseCaseExecuteInitInput{
+		FileName:    "large_file.dat",
+		Checksum:    testChecksum,
+		TotalSize:   availableSpace + 1, // Larger than available space
 		TotalChunks: testTotalChunks,
 		ChunkSize:   testChunkSize,
 		IsReUpload:  false,
@@ -110,6 +122,10 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 	invalidInputErrorDiffContent := e.NewInvalidInputError(nil, fmt.Sprintf("%s with different content (including orphaned data) already exists", existingFileDiffChecksum.Name))
 	invalidInputErrorExists := e.NewInvalidInputError(nil, fmt.Sprintf("%s with same content(including orphaned data) already exists", existingFileUploaded.Name))
 	invalidInputErrorBadStatus := e.NewInvalidInputError(nil, fmt.Sprintf("existing %s is in %s status and cannot be re-uploaded", existingFileUploaded.Name, existingFileUploaded.Status))
+	insufficientSpaceError := e.NewFileStorageError(
+		fmt.Errorf("not enough space"),
+		fmt.Sprintf("File size of %s is %d bytes, but available space is %d bytes", largeFileInput.FileName, largeFileInput.TotalSize, availableSpace),
+	)
 
 	tests := []struct {
 		name                  string
@@ -123,6 +139,7 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 			name:  "Success - New File",
 			input: newFileInput,
 			setupMocks: func() {
+				mockStorageRepo.EXPECT().GetAvailableSpace(ctx, baseStorageDir).Return(availableSpace)
 				mockFileRepo.EXPECT().GetFileByName(ctx, newFileInput.FileName).Return(nil, nil)
 				mockFileRepo.EXPECT().CreateFileWithChunks(ctx, gomock.Any(), baseStorageDir).DoAndReturn(
 					func(ctx context.Context, file *entity.File, baseDir string) (*entity.File, e.CustomError) {
@@ -141,9 +158,20 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 			expectedErr:           nil,
 		},
 		{
+			name:  "Error - Insufficient Storage Space",
+			input: largeFileInput,
+			setupMocks: func() {
+				mockStorageRepo.EXPECT().GetAvailableSpace(ctx, baseStorageDir).Return(availableSpace)
+			},
+			expectedFile:          nil,
+			expectedInvalidChunks: nil,
+			expectedErr:           insufficientSpaceError,
+		},
+		{
 			name:  "Error - New File - CreateFileWithChunks DB Error",
 			input: newFileInput,
 			setupMocks: func() {
+				mockStorageRepo.EXPECT().GetAvailableSpace(ctx, baseStorageDir).Return(availableSpace)
 				mockFileRepo.EXPECT().GetFileByName(ctx, newFileInput.FileName).Return(nil, nil)
 				mockFileRepo.EXPECT().CreateFileWithChunks(ctx, gomock.Any(), baseStorageDir).Return(nil, dbError)
 			},
@@ -155,6 +183,7 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 			name:  "Error - New File - CreateDirectory Storage Error",
 			input: newFileInput,
 			setupMocks: func() {
+				mockStorageRepo.EXPECT().GetAvailableSpace(ctx, baseStorageDir).Return(availableSpace)
 				mockFileRepo.EXPECT().GetFileByName(ctx, newFileInput.FileName).Return(nil, nil)
 				mockFileRepo.EXPECT().CreateFileWithChunks(ctx, gomock.Any(), baseStorageDir).Return(newFileEntity, nil)
 				mockStorageRepo.EXPECT().CreateDirectory(ctx, fileDirPath).Return(storageError)
@@ -169,6 +198,7 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 				FileName: existingFileInitialized.Name, Checksum: existingFileInitialized.Checksum, TotalSize: existingFileInitialized.Size, // Match existing
 			},
 			setupMocks: func() {
+				mockStorageRepo.EXPECT().GetAvailableSpace(ctx, baseStorageDir).Return(availableSpace)
 				mockFileRepo.EXPECT().GetFileByName(ctx, existingFileInitialized.Name).Return(existingFileInitialized, nil)
 				// Directory creation check is still performed
 				mockStorageRepo.EXPECT().CreateDirectory(ctx, filepath.Join(baseStorageDir, existingFileInitialized.Name)).Return(nil)
@@ -183,6 +213,7 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 				FileName: existingFileDiffChecksum.Name, Checksum: "new_checksum", TotalSize: existingFileDiffChecksum.Size, // Different checksum
 			},
 			setupMocks: func() {
+				mockStorageRepo.EXPECT().GetAvailableSpace(ctx, baseStorageDir).Return(availableSpace)
 				mockFileRepo.EXPECT().GetFileByName(ctx, existingFileDiffChecksum.Name).Return(existingFileDiffChecksum, nil)
 			},
 			expectedFile:          nil,
@@ -195,6 +226,7 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 				FileName: existingFileUploaded.Name, Checksum: existingFileUploaded.Checksum, TotalSize: existingFileUploaded.Size, IsReUpload: false, // Match existing, no re-upload
 			},
 			setupMocks: func() {
+				mockStorageRepo.EXPECT().GetAvailableSpace(ctx, baseStorageDir).Return(availableSpace)
 				mockFileRepo.EXPECT().GetFileByName(ctx, existingFileUploaded.Name).Return(existingFileUploaded, nil)
 			},
 			expectedFile:          nil,
@@ -207,6 +239,7 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 				FileName: existingFileInProgress.Name, Checksum: existingFileInProgress.Checksum, TotalSize: existingFileInProgress.Size, IsReUpload: true, // Match existing, re-upload
 			},
 			setupMocks: func() {
+				mockStorageRepo.EXPECT().GetAvailableSpace(ctx, baseStorageDir).Return(availableSpace)
 				mockFileRepo.EXPECT().GetFileByName(ctx, existingFileInProgress.Name).Return(existingFileInProgress, nil)
 				mockFileRepo.EXPECT().GetChunksByStatus(ctx, existingFileInProgress.ID, []entity.FileStatus{entity.FileStatusInitialized, entity.FileStatusInProgress, entity.FileStatusFailed}).Return(invalidChunks, nil)
 				// Expect deletion for both invalid chunks
@@ -214,6 +247,8 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 				mockStorageRepo.EXPECT().DeleteFile(ctx, invalidChunks[1].FilePath).Return(nil)
 				// Expect status update only for the chunk that wasn't INITIALIZED
 				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, chunkIDsToUpdate, entity.FileStatusInitialized).Return(nil)
+				// Expect UpdateAvailableSpace to be called
+				mockStorageRepo.EXPECT().UpdateAvailableSpace(int64(existingFileInProgress.Size))
 			},
 			expectedFile:          existingFileInProgress,
 			expectedInvalidChunks: invalidChunks,
@@ -225,6 +260,7 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 				FileName: existingFileUploaded.Name, Checksum: existingFileUploaded.Checksum, TotalSize: existingFileUploaded.Size, IsReUpload: true, // Match existing, re-upload
 			},
 			setupMocks: func() {
+				mockStorageRepo.EXPECT().GetAvailableSpace(ctx, baseStorageDir).Return(availableSpace)
 				mockFileRepo.EXPECT().GetFileByName(ctx, existingFileUploaded.Name).Return(existingFileUploaded, nil)
 			},
 			expectedFile:          nil,
@@ -240,6 +276,7 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 				IsReUpload: true,
 			},
 			setupMocks: func() {
+				mockStorageRepo.EXPECT().GetAvailableSpace(ctx, baseStorageDir).Return(availableSpace)
 				mockFileRepo.EXPECT().GetFileByName(ctx, existingFileInProgress.Name).Return(existingFileInProgress, nil)
 				mockFileRepo.EXPECT().GetChunksByStatus(ctx, existingFileInProgress.ID, gomock.Any()).Return(nil, dbError)
 			},
@@ -256,6 +293,7 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 				IsReUpload: true,
 			},
 			setupMocks: func() {
+				mockStorageRepo.EXPECT().GetAvailableSpace(ctx, baseStorageDir).Return(availableSpace)
 				mockFileRepo.EXPECT().GetFileByName(ctx, existingFileInProgress.Name).Return(existingFileInProgress, nil)
 				mockFileRepo.EXPECT().GetChunksByStatus(ctx, existingFileInProgress.ID, gomock.Any()).Return(invalidChunks, nil)
 				mockStorageRepo.EXPECT().DeleteFile(ctx, invalidChunks[0].FilePath).Return(storageError)
@@ -274,6 +312,7 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 				IsReUpload: true,
 			},
 			setupMocks: func() {
+				mockStorageRepo.EXPECT().GetAvailableSpace(ctx, baseStorageDir).Return(availableSpace)
 				mockFileRepo.EXPECT().GetFileByName(ctx, existingFileInProgress.Name).Return(existingFileInProgress, nil)
 				mockFileRepo.EXPECT().GetChunksByStatus(ctx, existingFileInProgress.ID, gomock.Any()).Return(invalidChunks, nil)
 				mockStorageRepo.EXPECT().DeleteFile(ctx, gomock.Any()).Return(nil).Times(len(invalidChunks))
@@ -314,8 +353,7 @@ func TestFileUploadUseCase_Execute(t *testing.T) {
 	mockStorageRepo := mock.NewMockFileStorageRepository(mockCtrl)
 
 	baseStorageDir := "/test/uploads"
-	uploadSizeLimit := uint64(1024 * 1024 * 100) // 100MB
-	uc := usecase.NewFileUploadUseCase(mockFileRepo, mockStorageRepo, baseStorageDir, uploadSizeLimit)
+	uc := usecase.NewFileUploadUseCase(mockFileRepo, mockStorageRepo, baseStorageDir)
 
 	ctx := context.Background()
 	testFileID := uint64(50)
@@ -515,8 +553,7 @@ func TestFileUploadUseCase_ExecuteFailRecovery(t *testing.T) {
 	mockStorageRepo := mock.NewMockFileStorageRepository(mockCtrl) // Not used but needed for constructor
 
 	baseStorageDir := "/test/uploads"
-	uploadSizeLimit := uint64(1024 * 1024 * 100) // 100MB
-	uc := usecase.NewFileUploadUseCase(mockFileRepo, mockStorageRepo, baseStorageDir, uploadSizeLimit)
+	uc := usecase.NewFileUploadUseCase(mockFileRepo, mockStorageRepo, baseStorageDir)
 
 	ctx := context.Background()
 	testFileID := uint64(70)

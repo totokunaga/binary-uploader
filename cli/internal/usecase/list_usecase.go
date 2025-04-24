@@ -1,30 +1,28 @@
 package usecase
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/tomoya.tokunaga/cli/internal/domain/entity"
 	"github.com/tomoya.tokunaga/cli/internal/infrastructure"
 )
 
 // ListUsecase handles file listing operations
 type ListUsecase struct {
-	config               *entity.Config
 	fileServerHttpClient infrastructure.FileServerHttpClient
 }
 
 // NewListUsecase creates a new list usecase
-func NewListUsecase(config *entity.Config) *ListUsecase {
+func NewListUsecase() *ListUsecase {
 	return &ListUsecase{
-		config:               config,
-		fileServerHttpClient: infrastructure.NewFileServerV1HttpClient(config.ServerURL),
+		fileServerHttpClient: infrastructure.NewFileServerV1HttpClient(),
 	}
 }
 
 // Execute lists files available on the server
-func (s *ListUsecase) Execute() (*infrastructure.FileInfo, error) {
+func (s *ListUsecase) Execute(ctx context.Context) (*infrastructure.FileInfo, error) {
 	// Get file list from server
-	fileInfos, err := s.fileServerHttpClient.ListFiles()
+	fileInfos, err := s.fileServerHttpClient.ListFiles(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}

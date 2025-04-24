@@ -28,28 +28,34 @@ type FileUploadUseCaseExecuteInput struct {
 }
 
 type fileUploadUseCase struct {
-	fileRepo        database.FileRepository
-	storageRepo     storage.FileStorageRepository
-	baseStorageDir  string
-	uploadSizeLimit uint64
+	fileRepo       database.FileRepository
+	storageRepo    storage.FileStorageRepository
+	baseStorageDir string
 }
 
 func NewFileUploadUseCase(
 	fileRepo database.FileRepository,
 	storageRepo storage.FileStorageRepository,
 	baseStorageDir string,
-	uploadSizeLimit uint64,
 ) FileUploadUseCase {
 	return &fileUploadUseCase{
-		fileRepo:        fileRepo,
-		storageRepo:     storageRepo,
-		baseStorageDir:  baseStorageDir,
-		uploadSizeLimit: uploadSizeLimit,
+		fileRepo:       fileRepo,
+		storageRepo:    storageRepo,
+		baseStorageDir: baseStorageDir,
 	}
 }
 
 // ExecuteInit initializes a file upload and returns an upload ID
 func (uc *fileUploadUseCase) ExecuteInit(ctx context.Context, input FileUploadUseCaseExecuteInitInput) (*entity.File, []*entity.FileChunk, e.CustomError) {
+	// check if the total size can fit in the available storage space
+	availableSpace := uc.storageRepo.GetAvailableSpace(ctx, uc.baseStorageDir)
+	if availableSpace < input.TotalSize {
+		return nil, nil, e.NewFileStorageError(
+			fmt.Errorf("not enough space"),
+			fmt.Sprintf("File size of %s is %d bytes, but available space is %d bytes", input.FileName, input.TotalSize, availableSpace),
+		)
+	}
+
 	// Directory path for the file chunks
 	fileDirPath := filepath.Join(uc.baseStorageDir, input.FileName)
 
@@ -92,8 +98,8 @@ func (uc *fileUploadUseCase) ExecuteInit(ctx context.Context, input FileUploadUs
 	if !input.IsReUpload {
 		return nil, nil, e.NewInvalidInputError(err, fmt.Sprintf("%s with same content(including orphaned data) already exists", input.FileName))
 	}
-	if existingFile.Status != entity.FileStatusInProgress && existingFile.Status != entity.FileStatusFailed {
-		// only accepts re-uploading for files which aren't completed yet or not in the deletion process
+	if existingFile.Status == entity.FileStatusUploaded {
+		// only accepts re-uploading for files which aren't completed yet
 		return nil, nil, e.NewInvalidInputError(err, fmt.Sprintf("existing %s is in %s status and cannot be re-uploaded", input.FileName, existingFile.Status))
 	}
 
@@ -125,6 +131,9 @@ func (uc *fileUploadUseCase) ExecuteInit(ctx context.Context, input FileUploadUs
 			return nil, nil, err
 		}
 	}
+
+	// Preserving the space for the file to be uploaded
+	uc.storageRepo.UpdateAvailableSpace(int64(input.TotalSize))
 
 	return existingFile, invalidChunks, nil
 }

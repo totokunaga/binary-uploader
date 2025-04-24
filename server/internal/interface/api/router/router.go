@@ -33,18 +33,19 @@ func NewRouter(
 
 // SetupRoutes sets up the routes for the API
 func (r *Router) SetupRoutes() {
+	// Health check route for the load balancer or monitoring tools
 	root := r.engine.Group("/")
 	root.GET("/health", func(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, "OK")
 	})
 
-	// API routes
+	// API routes. A new router group is created for each version of the API for the backward compatibility.
 	api := r.engine.Group("/api")
 
 	v1 := api.Group("/v1")
-	v1.POST("/upload/init/:file_name", r.fileUploadHandler.ExecuteInit)
-	v1.POST("/upload/:file_id/:chunk_number", r.fileUploadHandler.Execute)
-	v1.DELETE("/:file_name", r.fileDeleteHandler.Execute)
+	v1.POST("/files/upload/init/:file_name", r.fileUploadHandler.ExecuteInit)
+	v1.POST("/files/upload/:file_id/:chunk_number", r.fileUploadHandler.Execute)
+	v1.DELETE("/files/:file_name", r.fileDeleteHandler.Execute)
 	v1.GET("/files", r.fileGetHandler.Execute)
 	v1.GET("/files/:file_name", r.fileGetHandler.ExecuteGetStats)
 
@@ -57,7 +58,7 @@ func (r *Router) SetupRoutes() {
 	debug.GET("/pprof/trace", gin.WrapF(pprof.Trace))
 }
 
-// Engine returns the Gin engine
+// Engine returns the Gin engine. Used for dependency injection.
 func (r *Router) Engine() *gin.Engine {
 	return r.engine
 }

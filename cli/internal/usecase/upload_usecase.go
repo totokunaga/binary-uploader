@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -14,21 +15,20 @@ import (
 
 // UploadUsecase handles file upload operations
 type UploadUsecase struct {
-	config               *entity.Config
 	fileServerHttpClient infrastructure.FileServerHttpClient
 }
 
 // NewUploadUsecase creates a new upload usecase
-func NewUploadUsecase(config *entity.Config) *UploadUsecase {
+func NewUploadUsecase() *UploadUsecase {
 	return &UploadUsecase{
-		config:               config,
-		fileServerHttpClient: infrastructure.NewFileServerV1HttpClient(config.ServerURL),
+		fileServerHttpClient: infrastructure.NewFileServerV1HttpClient(),
 	}
 }
 
 type UploadUsecaseInput struct {
 	UploadID              uint64
 	FilePath              string
+	ChunkSize             int64
 	IsReUpload            bool
 	MissingChunkNumberMap map[uint64]struct{}
 	ProgressCb            func(size int64)
@@ -41,8 +41,7 @@ type chunk struct {
 }
 
 // UploadFile uploads a file to the server
-// TODO: Add context
-func (s *UploadUsecase) Execute(input *UploadUsecaseInput) error {
+func (s *UploadUsecase) Execute(ctx context.Context, input *UploadUsecaseInput) error {
 	file, err := os.Open(input.FilePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
@@ -53,31 +52,35 @@ func (s *UploadUsecase) Execute(input *UploadUsecaseInput) error {
 		}
 	}()
 
-	chunksChan := make(chan chunk, s.config.MaxConcurrency)
-	errorChan := make(chan error, s.config.MaxConcurrency)
+	// Retrieve flag values from context
+	concurrency := ctx.Value(entity.ConcurrencyKey).(int)
+	retries := ctx.Value(entity.RetriesKey).(int)
+
+	chunksChan := make(chan chunk, concurrency)
+	errorChan := make(chan error, concurrency)
 
 	var wg sync.WaitGroup
 
-	for range make([]struct{}, s.config.MaxConcurrency) {
+	for range make([]struct{}, concurrency) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for c := range chunksChan {
 				var uploadErr error
-				for retry := 0; retry <= s.config.Retries; retry++ {
-					uploadErr = s.fileServerHttpClient.UploadChunk(input.UploadID, c.id, c.data)
+				for retry := 0; retry <= retries; retry++ {
+					uploadErr = s.fileServerHttpClient.UploadChunk(ctx, input.UploadID, c.id, c.data)
 					if uploadErr == nil {
 						break
 					}
 
-					if retry < s.config.Retries {
+					if retry < retries {
 						time.Sleep(time.Second * time.Duration(retry+1)) // TODO: modernize?
 					}
 				}
 
 				if uploadErr != nil {
 					errorChan <- fmt.Errorf("failed to upload chunk %d after %d retries: %w",
-						c.id, s.config.Retries, uploadErr)
+						c.id, retries, uploadErr)
 					return
 				}
 
@@ -88,11 +91,11 @@ func (s *UploadUsecase) Execute(input *UploadUsecaseInput) error {
 		}()
 	}
 
-	reader := bufio.NewReaderSize(file, int(s.config.ChunkSize))
+	reader := bufio.NewReaderSize(file, int(input.ChunkSize))
 	chunkID := 0
 
 	for {
-		buffer := make([]byte, s.config.ChunkSize) // TODO: sync.Pool? / buffer size must be from the input parameter
+		buffer := make([]byte, input.ChunkSize) // TODO: sync.Pool? / buffer size must be from the input parameter
 		bytesRead, err := reader.Read(buffer)
 
 		if err != nil && err != io.EOF {

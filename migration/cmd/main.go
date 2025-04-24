@@ -13,38 +13,28 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
-func main() {
-	host := "localhost"
-	port := "13306"
-	user := "root"
-	password := ""
-	dbName := "fs_store"
+const (
+	DefaultHost     = "localhost"
+	DefaultPort     = "33306"
+	DefaultUser     = "superuser"
+	DefaultPassword = "superpass"
+	DefaultDBName   = "fs_store"
 
-	if os.Getenv("DB_HOST") != "" {
-		host = os.Getenv("DB_HOST")
-	}
-	if os.Getenv("DB_PORT") != "" {
-		port = os.Getenv("DB_PORT")
-	}
-	if os.Getenv("DB_USER") != "" {
-		user = os.Getenv("DB_USER")
-	}
-	if os.Getenv("DB_PASSWORD") != "" {
-		password = os.Getenv("DB_PASSWORD")
-	}
-	if os.Getenv("DB_NAME") != "" {
-		dbName = os.Getenv("DB_NAME")
-	}
+	MigrationDirPath = "file://db/migrations"
+)
+
+func main() {
+	dbConfig := parseEnvVars()
 
 	// DSN without database for initial connection
 	baseDSNWithoutDB := fmt.Sprintf("%s:%s@tcp(%s:%s)/",
-		user, password, host, port)
+		dbConfig.User, dbConfig.Password, dbConfig.Host, dbConfig.Port)
 
 	// DSN with database for migrations
 	baseDSN := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?multiStatements=true",
-		user, password, host, port, dbName)
+		dbConfig.User, dbConfig.Password, dbConfig.Host, dbConfig.Port, dbConfig.DBName)
 
-	// First, connect without database to create it if needed
+	// Connect with a non-database connection URL to create the database
 	db, err := sql.Open("mysql", baseDSNWithoutDB)
 	if err != nil {
 		log.Fatalf("Failed to connect to MySQL: %v", err)
@@ -52,18 +42,18 @@ func main() {
 	defer db.Close()
 
 	// Create database if it doesn't exist
-	_, err = db.Exec("CREATE DATABASE IF NOT EXISTS " + dbName)
+	_, err = db.Exec("CREATE DATABASE IF NOT EXISTS " + dbConfig.DBName)
 	if err != nil {
 		log.Fatalf("Failed to create database: %v", err)
 	}
-	log.Printf("Ensured database %s exists", dbName)
+	log.Printf("Ensured database %s exists", dbConfig.DBName)
 
 	// Add mysql:// prefix for golang-migrate
 	defaultDSN := "mysql://" + baseDSN
 
 	// Define command line flags
 	dsn := flag.String("dsn", defaultDSN, "Database DSN")
-	migrationPath := flag.String("path", "file://db/migrations", "Path to migration files")
+	migrationPath := flag.String("path", MigrationDirPath, "Path to migration files")
 	command := flag.String("command", "up", "Migration command (up, down, version, force)")
 	steps := flag.Int("steps", 0, "Number of migrations to apply (0 = all)")
 	version := flag.Int("version", -1, "Target version for force command")
@@ -86,47 +76,88 @@ func main() {
 		}
 	}()
 
-	switch *command {
+	// Execute the migration command
+	execErr := execMigrationCommand(m, *command, *steps, *version)
+
+	if execErr != nil {
+		if execErr == migrate.ErrNoChange {
+			fmt.Println("No migration needed")
+			return
+		}
+		log.Fatalf("Migration error: %v", execErr)
+	}
+
+	fmt.Printf("Migration '%s' completed successfully\n", *command)
+}
+
+type DBConfig struct {
+	Host     string
+	Port     string
+	User     string
+	Password string
+	DBName   string
+}
+
+// parseEnvVars parses environment variables for database configuration
+func parseEnvVars() DBConfig {
+	config := DBConfig{
+		Host:     DefaultHost,
+		Port:     DefaultPort,
+		User:     DefaultUser,
+		Password: DefaultPassword,
+		DBName:   DefaultDBName,
+	}
+
+	if os.Getenv("DB_HOST") != "" {
+		config.Host = os.Getenv("DB_HOST")
+	}
+	if os.Getenv("DB_PORT") != "" {
+		config.Port = os.Getenv("DB_PORT")
+	}
+	if os.Getenv("DB_USER") != "" {
+		config.User = os.Getenv("DB_USER")
+	}
+	if os.Getenv("DB_PASSWORD") != "" {
+		config.Password = os.Getenv("DB_PASSWORD")
+	}
+	if os.Getenv("DB_NAME") != "" {
+		config.DBName = os.Getenv("DB_NAME")
+	}
+
+	return config
+}
+
+// execMigrationCommand executes the migration command
+func execMigrationCommand(m *migrate.Migrate, command string, steps int, version int) error {
+	switch command {
 	case "up":
-		if *steps > 0 {
-			err = m.Steps(*steps)
+		if steps > 0 {
+			return m.Steps(steps)
 		} else {
-			err = m.Up()
+			return m.Up()
 		}
 	case "down":
-		if *steps > 0 {
-			err = m.Steps(-(*steps))
+		if steps > 0 {
+			return m.Steps(-steps)
 		} else {
-			err = m.Down()
+			return m.Down()
 		}
 	case "version":
 		version, dirty, vErr := m.Version()
 		if vErr != nil {
 			if vErr == migrate.ErrNilVersion {
-				fmt.Println("No migration has been applied yet")
-				return
+				return fmt.Errorf("no migration has been applied yet")
 			}
-			log.Fatalf("Error getting migration version: %v", vErr)
+			return fmt.Errorf("error getting migration version: %v", vErr)
 		}
 		fmt.Printf("Current migration version: %v, Dirty: %v\n", version, dirty)
-		return
+		return nil
 	case "force":
-		if *version < 0 {
-			log.Fatalf("Version must be specified for force command")
+		if version < 0 {
+			return fmt.Errorf("version must be specified for force command")
 		}
-		err = m.Force(*version)
+		return m.Force(version)
 	default:
-		flag.Usage()
-		os.Exit(1)
+		return fmt.Errorf("invalid command: %s", command)
 	}
-
-	if err != nil {
-		if err == migrate.ErrNoChange {
-			fmt.Println("No migration needed")
-			return
-		}
-		log.Fatalf("Migration error: %v", err)
-	}
-
-	fmt.Printf("Migration '%s' completed successfully\n", *command)
 }

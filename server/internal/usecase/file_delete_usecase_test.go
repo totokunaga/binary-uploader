@@ -70,6 +70,8 @@ func TestFileDeleteUseCase_Execute(t *testing.T) {
 				mockStorageRepo.EXPECT().DeleteChunk(gomock.Any(), testChunks[1].FilePath).Return(nil).Times(1)
 				mockStorageRepo.EXPECT().DeleteDirectory(ctx, testFileDirPath).Return(nil)
 				mockFileRepo.EXPECT().DeleteFileByID(ctx, testFileID).Return(nil)
+				// Expect the call to update available space
+				mockStorageRepo.EXPECT().UpdateAvailableSpace(int64(testFileSize))
 			},
 			expectedErr: nil,
 		},

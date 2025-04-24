@@ -5,21 +5,17 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/tomoya.tokunaga/cli/internal/domain/entity"
 	"github.com/tomoya.tokunaga/cli/internal/usecase"
 )
 
 type ListCommandHandler struct {
-	config      *entity.Config
 	listUsecase *usecase.ListUsecase
 }
 
 func NewListCommandHandler(
-	config *entity.Config,
 	listUsecase *usecase.ListUsecase,
 ) *ListCommandHandler {
 	return &ListCommandHandler{
-		config:      config,
 		listUsecase: listUsecase,
 	}
 }
@@ -30,7 +26,10 @@ func (h *ListCommandHandler) Execute() *cobra.Command {
 		Use:   "list-files",
 		Short: "List files available on the file server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			files, err := h.listUsecase.Execute()
+			// Retrieve context from command
+			ctx := cmd.Context()
+
+			files, err := h.listUsecase.Execute(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to list files: %w", err)
 			}
