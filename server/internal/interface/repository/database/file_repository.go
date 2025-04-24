@@ -232,7 +232,7 @@ func (r *fileRepository) UpdateChunksStatus(ctx context.Context, chunkIDs []uint
 }
 
 // UpdateFileAndChunkStatus updates the status of a specific file and a specific chunk within a transaction.
-func (r *fileRepository) UpdateFileAndChunkStatus(ctx context.Context, fileID uint64, chunkID uint64, status entity.FileStatus) e.CustomError {
+func (r *fileRepository) UpdateFileAndChunkStatus(ctx context.Context, fileID uint64, chunkIDs []uint64, status entity.FileStatus) e.CustomError {
 	tx := r.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return e.NewDatabaseError(tx.Error, "UpdateFileAndChunkStatus: failed to begin transaction")
@@ -250,12 +250,9 @@ func (r *fileRepository) UpdateFileAndChunkStatus(ctx context.Context, fileID ui
 	}
 
 	// Update chunk status
-	if err := tx.Model(&FileChunkModel{}).Where("id = ?", chunkID).Update("status", statusStr).Error; err != nil {
+	if err := tx.Model(&FileChunkModel{}).Where("id IN ?", chunkIDs).Update("status", statusStr).Error; err != nil {
 		tx.Rollback()
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return e.NewNotFoundError(err, fmt.Sprintf("chunk with ID %d not found for status update", chunkID))
-		}
-		return e.NewDatabaseError(err, "UpdateFileAndChunkStatus: failed to update file chunk status")
+		return e.NewDatabaseError(err, fmt.Sprintf("UpdateFileAndChunkStatus: failed to update file chunk statuses for IDs %v", chunkIDs))
 	}
 
 	if err := tx.Commit().Error; err != nil {
@@ -286,4 +283,32 @@ func (r *fileRepository) IncrementUploadedChunks(ctx context.Context, id uint64)
 	}
 
 	return model.UploadedChunks, model.TotalChunks, nil
+}
+
+// CountChunksByStatus counts the number of chunks for a file with a specific status
+// and returns the total number of chunks for that file.
+func (r *fileRepository) CountChunksByStatus(ctx context.Context, fileID uint64, status entity.FileStatus) (int64, int64, e.CustomError) {
+	var count int64
+	var fileModel FileModel
+	statusStr := string(status)
+	db := r.db.WithContext(ctx)
+
+	if err := db.Select("total_chunks").First(&fileModel, fileID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, 0, e.NewNotFoundError(err, fmt.Sprintf("CountChunksByStatus: file with ID %d not found", fileID))
+		}
+		return 0, 0, e.NewDatabaseError(err, "CountChunksByStatus: failed to get file")
+	}
+
+	err := db.
+		Model(&FileChunkModel{}).
+		Where("parent_id = ? AND status = ?", fileID, statusStr).
+		Count(&count).Error
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, int64(fileModel.TotalChunks), e.NewDatabaseError(err, fmt.Sprintf("CountChunksByStatus: failed to count chunks for file ID %d with status %s", fileID, statusStr))
+		}
+	}
+
+	return count, int64(fileModel.TotalChunks), nil
 }

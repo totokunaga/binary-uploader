@@ -36,9 +36,13 @@ type FileRepository interface {
 	// UpdateChunksStatus updates the status of multiple chunks identified by their IDs.
 	UpdateChunksStatus(ctx context.Context, chunkIDs []uint64, status entity.FileStatus) e.CustomError
 
-	// UpdateFileAndChunkStatus updates the status of a specific file and a specific chunk within a transaction.
-	UpdateFileAndChunkStatus(ctx context.Context, fileID uint64, chunkID uint64, status entity.FileStatus) e.CustomError
+	// UpdateFileAndChunkStatus updates the status of a specific file and a list of chunks within a transaction.
+	UpdateFileAndChunkStatus(ctx context.Context, fileID uint64, chunkIDs []uint64, status entity.FileStatus) e.CustomError
 
 	// IncrementUploadedChunks increments the uploaded chunks counter of a file
 	IncrementUploadedChunks(ctx context.Context, id uint64) (uint, uint, e.CustomError)
+
+	// CountChunksByStatus counts the number of chunks for a file with a specific status
+	// and returns the total number of chunks for that file.
+	CountChunksByStatus(ctx context.Context, fileID uint64, status entity.FileStatus) (int64, int64, e.CustomError)
 }

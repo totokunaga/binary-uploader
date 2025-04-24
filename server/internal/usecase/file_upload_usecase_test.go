@@ -245,8 +245,8 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 				// Expect deletion for both invalid chunks
 				mockStorageRepo.EXPECT().DeleteFile(ctx, invalidChunks[0].FilePath).Return(nil)
 				mockStorageRepo.EXPECT().DeleteFile(ctx, invalidChunks[1].FilePath).Return(nil)
-				// Expect status update only for the chunk that wasn't INITIALIZED
-				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, chunkIDsToUpdate, entity.FileStatusInitialized).Return(nil)
+				// Expect status update only for the chunk that wasn't INITIALIZED, using UpdateFileAndChunkStatus
+				mockFileRepo.EXPECT().UpdateFileAndChunkStatus(ctx, existingFileInProgress.ID, chunkIDsToUpdate, entity.FileStatusInitialized).Return(nil)
 				// Expect UpdateAvailableSpace to be called
 				mockStorageRepo.EXPECT().UpdateAvailableSpace(int64(existingFileInProgress.Size))
 			},
@@ -316,7 +316,7 @@ func TestFileUploadUseCase_ExecuteInit(t *testing.T) {
 				mockFileRepo.EXPECT().GetFileByName(ctx, existingFileInProgress.Name).Return(existingFileInProgress, nil)
 				mockFileRepo.EXPECT().GetChunksByStatus(ctx, existingFileInProgress.ID, gomock.Any()).Return(invalidChunks, nil)
 				mockStorageRepo.EXPECT().DeleteFile(ctx, gomock.Any()).Return(nil).Times(len(invalidChunks))
-				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, chunkIDsToUpdate, entity.FileStatusInitialized).Return(dbError)
+				mockFileRepo.EXPECT().UpdateFileAndChunkStatus(ctx, existingFileInProgress.ID, chunkIDsToUpdate, entity.FileStatusInitialized).Return(dbError)
 			},
 			expectedFile:          nil,
 			expectedInvalidChunks: nil,
@@ -392,10 +392,10 @@ func TestFileUploadUseCase_Execute(t *testing.T) {
 			input: input,
 			setupMocks: func() {
 				mockFileRepo.EXPECT().GetFileAndChunk(ctx, testFileID, testChunkNumber).Return(fileInitialized, chunkInitialized, nil)
-				mockFileRepo.EXPECT().UpdateFileAndChunkStatus(ctx, testFileID, testChunkID, entity.FileStatusInProgress).Return(nil)
+				mockFileRepo.EXPECT().UpdateFileAndChunkStatus(ctx, testFileID, []uint64{testChunkID}, entity.FileStatusInProgress).Return(nil)
 				mockStorageRepo.EXPECT().WriteChunk(ctx, input.Reader, testChunkPath).Return(nil)
 				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, []uint64{testChunkID}, entity.FileStatusUploaded).Return(nil)
-				mockFileRepo.EXPECT().IncrementUploadedChunks(ctx, testFileID).Return(uint(1), testTotalChunks, nil) // Not the last chunk
+				mockFileRepo.EXPECT().CountChunksByStatus(ctx, testFileID, entity.FileStatusUploaded).Return(int64(1), int64(testTotalChunks), nil)
 			},
 			expectedErr: nil,
 		},
@@ -404,10 +404,10 @@ func TestFileUploadUseCase_Execute(t *testing.T) {
 			input: input,
 			setupMocks: func() {
 				mockFileRepo.EXPECT().GetFileAndChunk(ctx, testFileID, testChunkNumber).Return(fileInProgress, chunkInitialized, nil)
-				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, []uint64{testChunkID}, entity.FileStatusInProgress).Return(nil) // Only chunk status updated
+				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, []uint64{testChunkID}, entity.FileStatusInProgress).Return(nil)
 				mockStorageRepo.EXPECT().WriteChunk(ctx, input.Reader, testChunkPath).Return(nil)
 				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, []uint64{testChunkID}, entity.FileStatusUploaded).Return(nil)
-				mockFileRepo.EXPECT().IncrementUploadedChunks(ctx, testFileID).Return(uint(1), testTotalChunks, nil) // Still not the last
+				mockFileRepo.EXPECT().CountChunksByStatus(ctx, testFileID, entity.FileStatusUploaded).Return(int64(1), int64(testTotalChunks), nil)
 			},
 			expectedErr: nil,
 		},
@@ -419,7 +419,7 @@ func TestFileUploadUseCase_Execute(t *testing.T) {
 				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, []uint64{testChunkID}, entity.FileStatusInProgress).Return(nil)
 				mockStorageRepo.EXPECT().WriteChunk(ctx, input.Reader, testChunkPath).Return(nil)
 				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, []uint64{testChunkID}, entity.FileStatusUploaded).Return(nil)
-				mockFileRepo.EXPECT().IncrementUploadedChunks(ctx, testFileID).Return(testTotalChunks, testTotalChunks, nil) // Last chunk
+				mockFileRepo.EXPECT().CountChunksByStatus(ctx, testFileID, entity.FileStatusUploaded).Return(int64(testTotalChunks), int64(testTotalChunks), nil)
 				mockFileRepo.EXPECT().UpdateFileStatus(ctx, testFileID, entity.FileStatusUploaded).Return(nil)
 			},
 			expectedErr: nil,
@@ -461,7 +461,7 @@ func TestFileUploadUseCase_Execute(t *testing.T) {
 			input: input,
 			setupMocks: func() {
 				mockFileRepo.EXPECT().GetFileAndChunk(ctx, testFileID, testChunkNumber).Return(fileInitialized, chunkInitialized, nil)
-				mockFileRepo.EXPECT().UpdateFileAndChunkStatus(ctx, testFileID, testChunkID, entity.FileStatusInProgress).Return(dbError)
+				mockFileRepo.EXPECT().UpdateFileAndChunkStatus(ctx, testFileID, []uint64{testChunkID}, entity.FileStatusInProgress).Return(dbError)
 			},
 			expectedErr: dbError,
 		},
@@ -496,14 +496,14 @@ func TestFileUploadUseCase_Execute(t *testing.T) {
 			expectedErr: dbError,
 		},
 		{
-			name:  "Error - IncrementUploadedChunks DB Error",
+			name:  "Error - CountChunksByStatus DB Error",
 			input: input,
 			setupMocks: func() {
 				mockFileRepo.EXPECT().GetFileAndChunk(ctx, testFileID, testChunkNumber).Return(fileInProgress, chunkInitialized, nil)
 				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, []uint64{testChunkID}, entity.FileStatusInProgress).Return(nil)
 				mockStorageRepo.EXPECT().WriteChunk(ctx, input.Reader, testChunkPath).Return(nil)
 				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, []uint64{testChunkID}, entity.FileStatusUploaded).Return(nil)
-				mockFileRepo.EXPECT().IncrementUploadedChunks(ctx, testFileID).Return(uint(0), uint(0), dbError)
+				mockFileRepo.EXPECT().CountChunksByStatus(ctx, testFileID, entity.FileStatusUploaded).Return(int64(0), int64(0), dbError)
 			},
 			expectedErr: dbError,
 		},
@@ -515,7 +515,7 @@ func TestFileUploadUseCase_Execute(t *testing.T) {
 				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, []uint64{testChunkID}, entity.FileStatusInProgress).Return(nil)
 				mockStorageRepo.EXPECT().WriteChunk(ctx, input.Reader, testChunkPath).Return(nil)
 				mockFileRepo.EXPECT().UpdateChunksStatus(ctx, []uint64{testChunkID}, entity.FileStatusUploaded).Return(nil)
-				mockFileRepo.EXPECT().IncrementUploadedChunks(ctx, testFileID).Return(testTotalChunks, testTotalChunks, nil) // Last chunk
+				mockFileRepo.EXPECT().CountChunksByStatus(ctx, testFileID, entity.FileStatusUploaded).Return(int64(testTotalChunks), int64(testTotalChunks), nil)
 				mockFileRepo.EXPECT().UpdateFileStatus(ctx, testFileID, entity.FileStatusUploaded).Return(dbError)
 			},
 			expectedErr: dbError,
@@ -572,7 +572,7 @@ func TestFileUploadUseCase_ExecuteFailRecovery(t *testing.T) {
 			fileID:  testFileID,
 			chunkID: testChunkID,
 			setupMocks: func() {
-				mockFileRepo.EXPECT().UpdateFileAndChunkStatus(ctx, testFileID, testChunkID, entity.FileStatusFailed).Return(nil)
+				mockFileRepo.EXPECT().UpdateFileAndChunkStatus(ctx, testFileID, []uint64{testChunkID}, entity.FileStatusFailed).Return(nil)
 			},
 			expectedErr: nil,
 		},
@@ -581,7 +581,7 @@ func TestFileUploadUseCase_ExecuteFailRecovery(t *testing.T) {
 			fileID:  testFileID,
 			chunkID: testChunkID,
 			setupMocks: func() {
-				mockFileRepo.EXPECT().UpdateFileAndChunkStatus(ctx, testFileID, testChunkID, entity.FileStatusFailed).Return(dbError)
+				mockFileRepo.EXPECT().UpdateFileAndChunkStatus(ctx, testFileID, []uint64{testChunkID}, entity.FileStatusFailed).Return(dbError)
 			},
 			expectedErr: dbError,
 		},

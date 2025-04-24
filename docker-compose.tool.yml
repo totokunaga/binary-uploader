@@ -16,6 +16,26 @@ services:
         cd cli/cmd && wire
       '
 
+  mockgen:
+    image: golang:1.24-alpine
+    container_name: exec-mockgen
+    working_dir: /app
+    environment:
+      - GOMODCACHE=/go/pkg/mod
+    volumes:
+      - .:/app
+      - go-mod-cache:/go/pkg/mod
+    command: |
+      sh -c '
+        go install go.uber.org/mock/mockgen@latest && \
+        mockgen -source=./server/internal/interface/repository/database/interface.go -destination=./server/internal/mock/mock_database.go -package mock && \
+        mockgen -source=./server/internal/interface/repository/storage/interface.go -destination=./server/internal/mock/mock_storage.go -package mock && \
+        mockgen -source=./server/internal/usecase/interface.go -destination=./server/internal/mock/mock_usecase.go -package mock && \
+        mockgen -source=./cli/internal/infrastructure/interface.go -destination=./cli/internal/mock/mock_http_client.go -package mock && \
+        mockgen -source=./cli/internal/usecase/interface.go -destination=./cli/internal/mock/mock_usecase.go -package mock
+        
+      '
+
   test:
     image: golang:1.24-alpine
     container_name: exec-test
@@ -74,6 +94,41 @@ services:
         cd server && golangci-lint run ./... && \
         cd ../ && \
         cd cli && golangci-lint run ./...
+      '
+  
+  build-cli-all:
+    image: golang:1.24-alpine
+    container_name: exec-build-cli-all
+    working_dir: /app
+    environment:
+      - GOMODCACHE=/go/pkg/mod
+    volumes:
+      - .:/app
+      - go-mod-cache:/go/pkg/mod
+    command: |
+      sh -c '
+        mkdir -p bin && \
+        cd cli/cmd && \
+
+        echo "Building for Windows (amd64)..." && \
+        GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ../../bin/fs-store-windows-amd64.exe . && \
+
+        echo "Building for Windows (arm64)..." && \
+        GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o ../../bin/fs-store-windows-arm64.exe . && \
+
+        echo "Building for Darwin (amd64)..." && \
+        GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o ../../bin/fs-store-darwin-amd64 . && \
+
+        echo "Building for Darwin (arm64)..." && \
+        GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../../bin/fs-store-darwin-arm64 . && \
+
+        echo "Building for Linux (amd64)..." && \
+        GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../../bin/fs-store-linux-amd64 . && \
+
+        echo "Building for Linux (arm64)..." && \
+        GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../../bin/fs-store-linux-arm64 . && \
+
+        echo "Build complete. Binaries are in the bin/ directory."
       '
 
 volumes:

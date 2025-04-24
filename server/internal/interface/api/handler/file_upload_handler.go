@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -138,20 +139,38 @@ func (h *FileUploadHandler) Execute(ctx *gin.Context) {
 		reader = gzipReader
 	}
 
-	ucErr := h.fileUploadUseCase.Execute(ctx, usecase.FileUploadUseCaseExecuteInput{
-		FileID:      fileID,
-		ChunkNumber: chunkNumber,
-		Reader:      reader,
-	})
-	if ucErr == nil {
-		ctx.JSON(http.StatusOK, UploadResponse{Status: "OK"})
-		return
-	}
-	// Updates file and chunk status to the failed status
-	if failRecovErr := h.fileUploadUseCase.ExecuteFailRecovery(ctx.Request.Context(), fileID, chunkNumber); failRecovErr != nil {
-		sendErrorResponse(ctx, h.logger, failRecovErr)
-		return
-	}
+	// Get the request context for client disconnect detection
+	reqCtx := ctx.Request.Context()
+	errChan := make(chan e.CustomError, 1)
+	// Run the upload process in a goroutine
+	go func() {
+		ucErr := h.fileUploadUseCase.Execute(reqCtx, usecase.FileUploadUseCaseExecuteInput{
+			FileID:      fileID,
+			ChunkNumber: chunkNumber,
+			Reader:      reader,
+		})
+		errChan <- ucErr
+	}()
 
-	sendErrorResponse(ctx, h.logger, ucErr)
+	// Wait for either the upload to complete or the context to be cancelled
+	select {
+	case <-reqCtx.Done():
+		if failRecovErr := h.fileUploadUseCase.ExecuteFailRecovery(context.Background(), fileID, chunkNumber); failRecovErr != nil {
+			sendErrorResponse(ctx, h.logger, failRecovErr)
+			return
+		}
+		sendErrorResponse(ctx, h.logger, e.NewContextError(reqCtx.Err(), "client request cancelled"))
+
+	case ucErr := <-errChan:
+		if ucErr == nil {
+			ctx.JSON(http.StatusOK, UploadResponse{Status: "OK"})
+			return
+		}
+
+		if failRecovErr := h.fileUploadUseCase.ExecuteFailRecovery(ctx, fileID, chunkNumber); failRecovErr != nil {
+			sendErrorResponse(ctx, h.logger, failRecovErr)
+			return
+		}
+		sendErrorResponse(ctx, h.logger, ucErr)
+	}
 }

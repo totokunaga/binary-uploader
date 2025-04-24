@@ -22,24 +22,6 @@ services:
     networks:
       - fs-network
 
-  migrator:
-    build:
-      context: ./migration
-      dockerfile: Dockerfile
-    container_name: fs-store-migrate
-    env_file: 
-      - ./.env
-    environment:
-      - DB_HOST=${DB_HOST}
-      - DB_PORT=${DB_PORT}
-    volumes:
-      - ./db/migrations:/app/db/migrations
-    depends_on:
-      mysql:
-        condition: service_healthy
-    networks:
-      - fs-network
-
   file-store:
     build:
       context: ./server
@@ -63,8 +45,6 @@ services:
       retries: 3
       start_period: 10s
     depends_on:
-      migrator:
-        condition: service_completed_successfully
       mysql:
         condition: service_healthy
     networks:

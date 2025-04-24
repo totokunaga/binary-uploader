@@ -147,11 +147,11 @@ func TestExecutePrecheck(t *testing.T) {
 			name: "Error: Same file exists, status InProgress, not orphaned",
 			mockSetup: func(mockClient *mock.MockFileServerHttpClient) {
 				mockClient.EXPECT().GetFileStats(ctx, "target.txt").Return(&entity.FileStatsResp{
-					Status:              entity.FileStatusInProgress,
 					Checksum:            checksum,
 					Size:                uint64(fileSize),
-					UpdatedAt:           now.Add(-serverUploadTimeoutDuration).Add(time.Second),
-					UploadTimeoutSecond: serverUploadTimeoutDuration,
+					Status:              entity.FileStatusInProgress,
+					UpdatedAt:           time.Now(),
+					UploadTimeoutSecond: 3600 * time.Second, // Expecting error
 				}, nil)
 			},
 			input: &usecase.InitUploadPrecheckUsecaseInput{
@@ -161,7 +161,7 @@ func TestExecutePrecheck(t *testing.T) {
 			wantAction:           usecase.Exits,
 			wantOutput:           nil,
 			wantErr:              true,
-			expectedErrSubstring: "remote file server processing target.txt",
+			expectedErrSubstring: "remote file server processing 'target.txt'",
 		},
 		{
 			name: "Suggest Deletion: Different file exists (checksum mismatch)",

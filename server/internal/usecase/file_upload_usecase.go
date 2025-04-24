@@ -126,7 +126,7 @@ func (uc *fileUploadUseCase) ExecuteInit(ctx context.Context, input FileUploadUs
 		}
 	}
 	if len(chunkIDsToUpdate) > 0 {
-		if err := uc.fileRepo.UpdateChunksStatus(ctx, chunkIDsToUpdate, entity.FileStatusInitialized); err != nil {
+		if err := uc.fileRepo.UpdateFileAndChunkStatus(ctx, existingFile.ID, chunkIDsToUpdate, entity.FileStatusInitialized); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -153,7 +153,7 @@ func (uc *fileUploadUseCase) Execute(ctx context.Context, input FileUploadUseCas
 
 	// Update file and chunk status to processing
 	if file.Status == entity.FileStatusInitialized {
-		err = uc.fileRepo.UpdateFileAndChunkStatus(ctx, file.ID, chunk.ID, entity.FileStatusInProgress)
+		err = uc.fileRepo.UpdateFileAndChunkStatus(ctx, file.ID, []uint64{chunk.ID}, entity.FileStatusInProgress)
 		if err != nil {
 			return err
 		}
@@ -176,13 +176,10 @@ func (uc *fileUploadUseCase) Execute(ctx context.Context, input FileUploadUseCas
 		return err
 	}
 
-	// Increment uploaded chunks counter
-	uploadedChunks, totalChunks, err := uc.fileRepo.IncrementUploadedChunks(ctx, file.ID)
+	uploadedChunks, totalChunks, err := uc.fileRepo.CountChunksByStatus(ctx, file.ID, entity.FileStatusUploaded)
 	if err != nil {
 		return err
 	}
-
-	// Check if all chunks are uploaded
 	if uploadedChunks == totalChunks {
 		// Update file status to completed
 		if err := uc.fileRepo.UpdateFileStatus(ctx, file.ID, entity.FileStatusUploaded); err != nil {
@@ -190,12 +187,26 @@ func (uc *fileUploadUseCase) Execute(ctx context.Context, input FileUploadUseCas
 		}
 	}
 
+	// // Increment uploaded chunks counter
+	// uploadedChunks, totalChunks, err := uc.fileRepo.IncrementUploadedChunks(ctx, file.ID)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// // Check if all chunks are uploaded
+	// if uploadedChunks == totalChunks {
+	// 	// Update file status to completed
+	// 	if err := uc.fileRepo.UpdateFileStatus(ctx, file.ID, entity.FileStatusUploaded); err != nil {
+	// 		return err
+	// 	}
+	// }
+
 	return nil
 }
 
 // ExecuteFailRecovery handles the failure of a chunk upload
 func (uc *fileUploadUseCase) ExecuteFailRecovery(ctx context.Context, fileID uint64, chunkID uint64) e.CustomError {
-	if err := uc.fileRepo.UpdateFileAndChunkStatus(ctx, fileID, chunkID, entity.FileStatusFailed); err != nil {
+	if err := uc.fileRepo.UpdateFileAndChunkStatus(ctx, fileID, []uint64{chunkID}, entity.FileStatusFailed); err != nil {
 		return err
 	}
 	return nil

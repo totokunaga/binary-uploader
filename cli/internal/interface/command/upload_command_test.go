@@ -188,7 +188,7 @@ func TestUploadCommandHandler_Execute(t *testing.T) {
 				initMock.EXPECT().ExecutePrecheck(gomock.Any(), gomock.Any()).
 					Return(usecase.PostPrecheckAction(0), nil, errors.New("precheck failed"))
 			},
-			expectedOut: []string{"Failed to initialize upload precheck: precheck failed"},
+			expectedOut: []string{"[ERROR] Failed to initialize upload pre-check: precheck failed"},
 		},
 		{
 			name:        "Error: Init fails",

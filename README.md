@@ -1,4 +1,3 @@
-
 # README
 
 # File Storage Server & CLI
@@ -73,6 +72,14 @@ Use `make` for development tasks:
 - `make wire`: Generate dependency injection code using [Google Wire](https://github.com/google/wire).
 - `make test`: Run Go tests (`go test ./...`).
 - `make lint`: Run Go linter (`golangci-lint run`).
+- `make mockgen`: Run mockgen to generate mocks
+
+## Software Distribution
+
+- `make build-cli-all`: Create a CLI executable binary for Windows, MacOS, and Linux with AMD64 and ARM64 respectively.
+- Created executables can be distributed to user through a direct download or package managers
+
+## Software Distribution
 
 ## Technical Specifications
 

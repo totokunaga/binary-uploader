@@ -123,7 +123,6 @@ func (s *uploadUsecase) Execute(ctx context.Context, input *UploadUsecaseInput) 
 		}
 	}
 
-	// Close the channel to signal workers that no more chunks are coming
 	close(chunksChan)
 
 	// Start a goroutine to close the error channel once all workers are done
@@ -132,7 +131,6 @@ func (s *uploadUsecase) Execute(ctx context.Context, input *UploadUsecaseInput) 
 		close(errorChan)
 	}()
 
-	// Check for any errors from workers
 	if err, ok := <-errorChan; ok {
 		return err
 	}

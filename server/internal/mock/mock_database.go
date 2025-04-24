@@ -42,6 +42,22 @@ func (m *MockFileRepository) EXPECT() *MockFileRepositoryMockRecorder {
 	return m.recorder
 }
 
+// CountChunksByStatus mocks base method.
+func (m *MockFileRepository) CountChunksByStatus(ctx context.Context, fileID uint64, status entity.FileStatus) (int64, int64, error.CustomError) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountChunksByStatus", ctx, fileID, status)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error.CustomError)
+	return ret0, ret1, ret2
+}
+
+// CountChunksByStatus indicates an expected call of CountChunksByStatus.
+func (mr *MockFileRepositoryMockRecorder) CountChunksByStatus(ctx, fileID, status any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountChunksByStatus", reflect.TypeOf((*MockFileRepository)(nil).CountChunksByStatus), ctx, fileID, status)
+}
+
 // CreateFileWithChunks mocks base method.
 func (m *MockFileRepository) CreateFileWithChunks(ctx context.Context, file *entity.File, baseDir string) (*entity.File, error.CustomError) {
 	m.ctrl.T.Helper()
@@ -178,17 +194,17 @@ func (mr *MockFileRepositoryMockRecorder) UpdateChunksStatus(ctx, chunkIDs, stat
 }
 
 // UpdateFileAndChunkStatus mocks base method.
-func (m *MockFileRepository) UpdateFileAndChunkStatus(ctx context.Context, fileID, chunkID uint64, status entity.FileStatus) error.CustomError {
+func (m *MockFileRepository) UpdateFileAndChunkStatus(ctx context.Context, fileID uint64, chunkIDs []uint64, status entity.FileStatus) error.CustomError {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateFileAndChunkStatus", ctx, fileID, chunkID, status)
+	ret := m.ctrl.Call(m, "UpdateFileAndChunkStatus", ctx, fileID, chunkIDs, status)
 	ret0, _ := ret[0].(error.CustomError)
 	return ret0
 }
 
 // UpdateFileAndChunkStatus indicates an expected call of UpdateFileAndChunkStatus.
-func (mr *MockFileRepositoryMockRecorder) UpdateFileAndChunkStatus(ctx, fileID, chunkID, status any) *gomock.Call {
+func (mr *MockFileRepositoryMockRecorder) UpdateFileAndChunkStatus(ctx, fileID, chunkIDs, status any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateFileAndChunkStatus", reflect.TypeOf((*MockFileRepository)(nil).UpdateFileAndChunkStatus), ctx, fileID, chunkID, status)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateFileAndChunkStatus", reflect.TypeOf((*MockFileRepository)(nil).UpdateFileAndChunkStatus), ctx, fileID, chunkIDs, status)
 }
 
 // UpdateFileStatus mocks base method.
