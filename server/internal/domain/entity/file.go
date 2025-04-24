@@ -11,6 +11,7 @@ const (
 	FileStatusUploaded    FileStatus = "UPLOADED"
 )
 
+// File represents a file in the file system
 type File struct {
 	ID             uint64     `json:"id"`
 	Name           string     `json:"name"`
@@ -25,6 +26,7 @@ type File struct {
 	FileChunks     []FileChunk
 }
 
+// NewFile creates a new File entity
 func NewFile(name string, size uint64, checksum string, totalChunks uint, chunkSize uint64) *File {
 	return &File{
 		Name:           name,

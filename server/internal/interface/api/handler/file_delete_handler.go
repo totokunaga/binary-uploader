@@ -28,10 +28,10 @@ func NewFileDeleteHandler(fileDeleteUseCase usecase.FileDeleteUseCase, logger *s
 
 // Execute handles file deletion
 func (h *FileDeleteHandler) Execute(ctx *gin.Context) {
-	// Get the file name from the URL
+	// validate the file name
 	fileName := ctx.Param("file_name")
 	if fileName == "." || fileName == ".." {
-		sendErrorResponse(ctx, h.logger, e.NewInvalidInputError(errors.New("invalid file name"), ""))
+		sendErrorResponse(ctx, h.logger, e.NewInvalidInputError(errors.New("invalid file name"), fileName))
 		return
 	}
 

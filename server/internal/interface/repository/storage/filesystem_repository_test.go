@@ -10,12 +10,14 @@ import (
 	"golang.org/x/exp/slog"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tomoya.tokunaga/server/internal/domain/entity"
 )
 
 func TestStorageRepository_WriteChunk(t *testing.T) {
 	ctx := context.Background()
+	config := entity.NewConfig()
+	repo := NewStorageRepository(config, slog.Default())
 	tempDir := t.TempDir()
-	repo := NewStorageRepository(slog.Default(), tempDir)
 
 	tests := []struct {
 		name        string
@@ -29,14 +31,14 @@ func TestStorageRepository_WriteChunk(t *testing.T) {
 			content: "hello world",
 			setup: func(t *testing.T) (string, func()) {
 				filePath := filepath.Join(tempDir, "subdir", "chunk_0")
-				return filePath, func() { /* TempDir handles cleanup */ }
+				return filePath, func() {}
 			},
 			wantErr: false,
 			checkResult: func(t *testing.T, filePath string) {
 				data, err := os.ReadFile(filePath)
 				assert.NoError(t, err)
 				assert.Equal(t, "hello world", string(data))
-				// Check if directory was created
+
 				dirPath := filepath.Dir(filePath)
 				_, err = os.Stat(dirPath)
 				assert.NoError(t, err, "Directory should exist")
@@ -83,9 +85,9 @@ func TestStorageRepository_WriteChunk(t *testing.T) {
 
 func TestStorageRepository_DeleteChunk(t *testing.T) {
 	ctx := context.Background()
+	config := entity.NewConfig()
+	repo := NewStorageRepository(config, slog.Default())
 	tempDir := t.TempDir()
-	repo := NewStorageRepository(slog.Default(), tempDir)
-
 	tests := []struct {
 		name      string
 		setup     func(t *testing.T) (filePath string, cleanup func())
@@ -120,8 +122,6 @@ func TestStorageRepository_DeleteChunk(t *testing.T) {
 				assert.True(t, os.IsNotExist(err))
 			},
 		},
-		// Note: Testing actual permission errors reliably might require more complex setup
-		// or specific OS environments.
 	}
 
 	for _, tt := range tests {
@@ -129,7 +129,7 @@ func TestStorageRepository_DeleteChunk(t *testing.T) {
 			filePath, cleanup := tt.setup(t)
 			defer cleanup()
 
-			gotErr := repo.DeleteChunk(ctx, filePath)
+			gotErr := repo.DeleteFile(ctx, filePath)
 
 			if tt.wantErr {
 				assert.Error(t, gotErr)
@@ -146,9 +146,9 @@ func TestStorageRepository_DeleteChunk(t *testing.T) {
 
 func TestStorageRepository_CreateDirectory(t *testing.T) {
 	ctx := context.Background()
+	config := entity.NewConfig()
+	repo := NewStorageRepository(config, slog.Default())
 	tempDir := t.TempDir()
-	repo := NewStorageRepository(slog.Default(), tempDir)
-
 	tests := []struct {
 		name      string
 		setup     func(t *testing.T) (dirPath string, cleanup func())
@@ -221,9 +221,9 @@ func TestStorageRepository_CreateDirectory(t *testing.T) {
 
 func TestStorageRepository_DeleteDirectory(t *testing.T) {
 	ctx := context.Background()
+	config := entity.NewConfig()
+	repo := NewStorageRepository(config, slog.Default())
 	tempDir := t.TempDir()
-	repo := NewStorageRepository(slog.Default(), tempDir)
-
 	tests := []struct {
 		name      string
 		setup     func(t *testing.T) (dirPath string, cleanup func())
@@ -296,7 +296,7 @@ func TestStorageRepository_DeleteDirectory(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dirPath, cleanup := tt.setup(t)
-			// No defer cleanup() here because the function under test might delete the path
+			defer cleanup()
 
 			gotErr := repo.DeleteDirectory(ctx, dirPath)
 
@@ -308,19 +308,16 @@ func TestStorageRepository_DeleteDirectory(t *testing.T) {
 			if tt.checkFunc != nil {
 				tt.checkFunc(t, dirPath)
 			}
-			// Manually call cleanup if the test didn't expect deletion or failed before deletion
-			// This is tricky. t.TempDir() handles cleanup usually.
-			// For manual paths, cleanup might be needed conditionally.
-			// Sticking with TempDir avoids this complexity.
-			_ = cleanup // Use cleanup if manual paths were used and needed conditional cleanup
+			_ = cleanup
 		})
 	}
 }
 
 func TestStorageRepository_FileExists(t *testing.T) {
 	ctx := context.Background()
+	config := entity.NewConfig()
+	repo := NewStorageRepository(config, slog.Default())
 	tempDir := t.TempDir()
-	repo := NewStorageRepository(slog.Default(), tempDir)
 
 	tests := []struct {
 		name       string
@@ -381,9 +378,9 @@ func TestStorageRepository_FileExists(t *testing.T) {
 
 func TestStorageRepository_DeleteFile(t *testing.T) {
 	ctx := context.Background()
+	config := entity.NewConfig()
+	repo := NewStorageRepository(config, slog.Default())
 	tempDir := t.TempDir()
-	repo := NewStorageRepository(slog.Default(), tempDir)
-
 	tests := []struct {
 		name      string
 		setup     func(t *testing.T) (filePath string, cleanup func())
@@ -465,13 +462,14 @@ func TestStorageRepository_DeleteFile(t *testing.T) {
 
 func TestStorageRepository_GetAvailableSpace(t *testing.T) {
 	ctx := context.Background()
+	config := entity.NewConfig()
 	tempDir := t.TempDir()
 
 	// Ensure the directory exists before creating the repository
 	_, err := os.Stat(tempDir)
 	assert.NoError(t, err, "Temp directory should exist")
 
-	repo := NewStorageRepository(slog.Default(), tempDir)
+	repo := NewStorageRepository(config, slog.Default())
 
 	// Test getting the available space
 	available := repo.GetAvailableSpace(ctx, tempDir)
@@ -480,8 +478,9 @@ func TestStorageRepository_GetAvailableSpace(t *testing.T) {
 
 func TestStorageRepository_UpdateAvailableSpace(t *testing.T) {
 	ctx := context.Background()
+	config := entity.NewConfig()
 	tempDir := t.TempDir()
-	repo := NewStorageRepository(slog.Default(), tempDir)
+	repo := NewStorageRepository(config, slog.Default())
 
 	// Get initial available space
 	initialSpace := repo.GetAvailableSpace(ctx, tempDir)
@@ -490,7 +489,7 @@ func TestStorageRepository_UpdateAvailableSpace(t *testing.T) {
 	sizeReduction := int64(1024 * 1024) // 1MB
 	repo.UpdateAvailableSpace(-sizeReduction)
 
-	// Verify space was reduced
+	// Test space was reduced
 	reducedSpace := repo.GetAvailableSpace(ctx, tempDir)
 	assert.Equal(t, initialSpace-uint64(sizeReduction), reducedSpace, "Space should be reduced by 1MB")
 
@@ -505,31 +504,36 @@ func TestStorageRepository_UpdateAvailableSpace(t *testing.T) {
 	hugeReduction := int64(initialSpace * 2) // More than available
 	repo.UpdateAvailableSpace(-hugeReduction)
 
-	// Verify space is zero but doesn't underflow
+	// Test space is zero but doesn't underflow
 	finalSpace := repo.GetAvailableSpace(ctx, tempDir)
 	assert.Zero(t, finalSpace, "Space should be zero after large reduction")
 }
 
 func TestStorageRepository_InitWithNonExistentDirectory(t *testing.T) {
-	// Create a temp base dir
 	tempBase := t.TempDir()
-
-	// Define a non-existent subdirectory
 	nonExistentDir := filepath.Join(tempBase, "storage", "uploads")
 
-	// Verify directory doesn't exist yet
+	// Test directory doesn't exist yet
 	_, err := os.Stat(nonExistentDir)
 	assert.True(t, os.IsNotExist(err), "Directory should not exist before test")
 
-	// Create repository - this should create the directory
-	repo := NewStorageRepository(slog.Default(), nonExistentDir)
+	// Create a custom config that uses our test directory
+	config := entity.NewConfig()
+	config.BaseStorageDir = tempBase
 
-	// Verify directory was created
+	// Create repository - this should create the base directory
+	repo := NewStorageRepository(config, slog.Default())
+
+	// Now create the uploads subdirectory using the repo
+	err = repo.CreateDirectory(context.Background(), nonExistentDir)
+	assert.NoError(t, err, "Should be able to create the directory")
+
+	// Test directory was created
 	dirInfo, err := os.Stat(nonExistentDir)
 	assert.NoError(t, err, "Directory should exist after repository creation")
 	assert.True(t, dirInfo.IsDir(), "Path should be a directory")
 
-	// Verify we can get available space from the new directory
+	// Test we can get available space from the new directory
 	available := repo.GetAvailableSpace(context.Background(), nonExistentDir)
 	assert.NotZero(t, available, "Available space should not be zero")
 }

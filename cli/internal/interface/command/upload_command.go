@@ -1,9 +1,11 @@
 package command
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
@@ -13,15 +15,15 @@ import (
 )
 
 type UploadCommandHandler struct {
-	initUploadUsecase *usecase.InitUploadUsecase
-	uploadUsecase     *usecase.UploadUsecase
-	deleteUsecase     *usecase.DeleteUsecase
+	initUploadUsecase usecase.InitUploadUsecase
+	uploadUsecase     usecase.UploadUsecase
+	deleteUsecase     usecase.DeleteUsecase
 }
 
 func NewUploadCommandHandler(
-	initUploadUsecase *usecase.InitUploadUsecase,
-	uploadUsecase *usecase.UploadUsecase,
-	deleteUsecase *usecase.DeleteUsecase,
+	initUploadUsecase usecase.InitUploadUsecase,
+	uploadUsecase usecase.UploadUsecase,
+	deleteUsecase usecase.DeleteUsecase,
 ) *UploadCommandHandler {
 	return &UploadCommandHandler{
 		initUploadUsecase: initUploadUsecase,
@@ -44,10 +46,7 @@ func (h *UploadCommandHandler) Execute() *cobra.Command {
 		Short: "Upload a file to the file server",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// There's no need to check the existence of the first argument because cobra.ExactArgs(1) handles it
 			filePath := args[0]
-
-			// Retrieve context from command
 			ctx := cmd.Context()
 
 			// Add command parameters to context
@@ -55,80 +54,92 @@ func (h *UploadCommandHandler) Execute() *cobra.Command {
 			ctx = context.WithValue(ctx, entity.RetriesKey, retries)
 			ctx = context.WithValue(ctx, entity.CompressionEnabledKey, compressionEnabled)
 
-			// Uses the user-preferred file name for this upload if specified
 			targetFileName := fileName
 			if targetFileName == "" {
 				targetFileName = filepath.Base(filePath)
 			}
 
-			// Checks if there's a file with the same name on the server
-			postPrecheckAction, precheckOutput, err := h.initUploadUsecase.ExecutePrecheck(ctx, filePath, targetFileName)
+			// Precheck
+			postPrecheckAction, precheckOutput, err := h.initUploadUsecase.ExecutePrecheck(ctx, &usecase.InitUploadPrecheckUsecaseInput{
+				FilePath:       filePath,
+				TargetFileName: targetFileName,
+			})
 			if err != nil {
-				return fmt.Errorf("[ERROR] failed to initialize upload: %w", err)
+				cmd.PrintErrf("[ERROR] Failed to initialize upload pre-check: %v\n", err)
+				return nil
 			}
 
-			// Determines if this is a re-upload based on the result of precheck usecase
 			isReUpload := postPrecheckAction == usecase.ProceedWithReUpload
-
-			// Initializes the upload usecase
 			uploadInitOutput := &usecase.UploadUsecaseOutput{}
 
-			// Takes an appropriate action based on the result of precheck usecase
+			// Handle precheck results
 			switch postPrecheckAction {
 			case usecase.Exits:
-				// When the file with a same name and same contents exist in the file server
-				fmt.Printf("'%s' already uploaded to the file server.\n", targetFileName)
-				fmt.Printf("Exiting...\n")
+				cmd.Printf("'%s' already uploaded to the file server.\n", targetFileName)
+				cmd.Println("Exiting...")
 				return nil
 			case usecase.ProceedWithInit, usecase.ProceedWithReUpload:
-				// When there's no conflicting file exists on the file server, or the file with a same name and same contents were tried to be
-				// uploaded but encoutered some problems before. Sends the upload-init request
-				uploadInitOutput, err = h.initUploadUsecase.Execute(ctx, filePath, targetFileName, precheckOutput.Checksum, chunkSize, isReUpload)
+				uploadInitOutput, err = h.initUploadUsecase.Execute(ctx, &usecase.InitUploadUsecaseInput{
+					FilePath:         filePath,
+					TargetFileName:   targetFileName,
+					OriginalChecksum: precheckOutput.Checksum,
+					ChunkSize:        chunkSize,
+					IsReUpload:       isReUpload,
+				})
 				if err != nil {
+					// Return error here because it's a fundamental failure of init
 					return fmt.Errorf("[ERROR] failed to initialize upload: %w", err)
 				}
 			case usecase.SuggestExistingEntryDeletion:
-				// When there's a conflicting file exists on the file server (e.g. a file with the same name but different contents)
-				// Asks the user if they want to delete the conflicting file on the file server and retry the upload
-				forceDeleted, err := h.handleFileConflict(ctx, targetFileName)
+				forceDeleted, err := h.handleFileConflict(cmd, ctx, targetFileName)
 				if err != nil {
-					return err
-				}
-				if !forceDeleted {
-					fmt.Println("Cancelling the upload...")
+					cmd.PrintErrf("[ERROR] Failed to handle file conflict: %v\n", err)
 					return nil
 				}
-				// Sends the upload-init request for the target file (the rest of the process is same as ProceedWithInit and ProceedWithReUpload)
-				uploadInitOutput, err = h.initUploadUsecase.Execute(ctx, filePath, targetFileName, precheckOutput.Checksum, chunkSize, isReUpload)
+				if !forceDeleted {
+					cmd.Println("Cancelling the upload...")
+					return nil
+				}
+				// Re-init after deletion
+				uploadInitOutput, err = h.initUploadUsecase.Execute(ctx, &usecase.InitUploadUsecaseInput{
+					FilePath:         filePath,
+					TargetFileName:   targetFileName,
+					OriginalChecksum: precheckOutput.Checksum,
+					ChunkSize:        chunkSize,
+					IsReUpload:       false, // It's a fresh upload after deletion
+				})
 				if err != nil {
-					return fmt.Errorf("[ERROR] failed to initialize upload: %w", err)
+					cmd.PrintErrf("[ERROR] Failed to initialize upload after conflict resolution: %v\n", err)
+					return nil
 				}
 			default:
-				return fmt.Errorf("[ERROR] unexpected post-precheck action: %v", postPrecheckAction)
+				cmd.PrintErrf("[ERROR] Unexpected post-precheck action: %v\n", postPrecheckAction)
+				return nil
 			}
 
-			// Calculates the number of bytes to be uploaded to the file server. If it's re-uploading, it calculates based on the number of
-			// missing bytes reported by the file server in the upload-init response.
+			// Calculate total size for progress bar
 			var uploadChunkSizeTotal int64
-			if isReUpload {
+			if isReUpload && uploadInitOutput.MissingChunkNumberMap != nil {
 				uploadChunkSizeTotal = int64(uploadInitOutput.UploadChunkSize * uint64(len(uploadInitOutput.MissingChunkNumberMap)))
 			} else {
 				uploadChunkSizeTotal = precheckOutput.FileSize
 			}
 
-			// Sets up the progress bar
+			// Setup progress bar to write to cmd's error stream
 			bar := progressbar.NewOptions64(
 				uploadChunkSizeTotal,
 				progressbar.OptionSetDescription("Uploading in progress..."),
+				progressbar.OptionSetWriter(cmd.ErrOrStderr()),
 				progressbar.OptionShowBytes(true),
 				progressbar.OptionSetWidth(30),
 				progressbar.OptionThrottle(100),
 				progressbar.OptionShowCount(),
 				progressbar.OptionFullWidth(),
 				progressbar.OptionSetRenderBlankState(true),
+				progressbar.OptionClearOnFinish(),
 			)
 
-			// Uploads the file to the file server chunk by chunk
+			// Execute upload
 			err = h.uploadUsecase.Execute(ctx, &usecase.UploadUsecaseInput{
 				UploadID:              uploadInitOutput.UploadID,
 				FilePath:              filePath,
@@ -138,45 +149,52 @@ func (h *UploadCommandHandler) Execute() *cobra.Command {
 				ProgressCb:            func(size int64) { _ = bar.Add64(size) },
 			})
 			if err != nil {
+				_ = bar.Clear()
 				deleteErr := h.deleteUsecase.Execute(ctx, targetFileName)
 				if deleteErr != nil {
-					return fmt.Errorf("[ERROR] %w", deleteErr)
+					cmd.PrintErrf("[ERROR] Failed to delete the partially uploaded file entry: %v\n", deleteErr)
+					cmd.PrintErrf("[ERROR] Upload failed for file '%s': %v\n", targetFileName, err)
+					return nil
 				}
-				return fmt.Errorf("upload failed for file '%s': %w", targetFileName, err)
+				cmd.PrintErrf("[ERROR] Upload failed for file '%s': %v\n", targetFileName, err)
+				return nil
 			}
 
-			fmt.Printf("\nSuccessfully uploaded!")
+			cmd.Println("Successfully uploaded!")
 			return nil
 		},
 	}
 
+	// Define flags
 	cmd.Flags().IntVarP(&retries, "retries", "r", entity.DefaultRetries, "Number of retries for failed chunk uploads")
 	cmd.Flags().IntVarP(&concurrency, "concurrency", "c", entity.DefaultMaxConcurrency, "Maximum number of concurrent operations")
 	cmd.Flags().Int64VarP(&chunkSize, "chunk-size", "s", entity.DefaultChunkSize, "Chunk size in bytes")
 	cmd.Flags().StringVarP(&fileName, "file-name", "n", "", "Specify the file name to be used on the server")
 	cmd.Flags().BoolVarP(&compressionEnabled, "compression", "z", entity.DefaultCompressionEnabled, "Enable gzip compression for the file (data will be decompressed on the file server)")
+
 	return cmd
 }
 
-func (h *UploadCommandHandler) handleFileConflict(ctx context.Context, targetFileName string) (bool, error) {
-	// Asks the user if they want to delete the conflicting file on the file server and retry the upload
-	fmt.Printf("[ERROR] A confilcting file (a file with the same name but different contents) is found on the file server\n")
-	fmt.Printf("* Do you want to delete the conflicting file and proceed with the upload? (y/n): ")
+// handleFileConflict now accepts *cobra.Command to use its I/O streams
+func (h *UploadCommandHandler) handleFileConflict(cmd *cobra.Command, ctx context.Context, targetFileName string) (bool, error) {
+	cmd.PrintErrln("[ERROR] A confilcting file (a file with the same name but different contents) is found on the file server")
+	cmd.PrintErrf("* Do you want to delete the conflicting file and proceed with the upload? (y/n): ")
 
-	// Reads the user input
-	var input string
-	_, err := fmt.Scanln(&input)
+	// Use bufio.Reader to read from cmd's input stream
+	reader := bufio.NewReader(cmd.InOrStdin())
+	input, err := reader.ReadString('\n')
 	if err != nil {
 		return false, fmt.Errorf("failed to read user input: %w", err)
 	}
-	fmt.Println()
+	input = strings.TrimSpace(input)
 
-	if input == "y" || input == "Y" {
-		fmt.Printf("Startting to delete the conflicting file \"%s\" on the file server...\n", targetFileName)
+	if strings.EqualFold(input, "y") {
+		cmd.Printf("Attempting to delete the conflicting file \"%s\" on the file server...\n", targetFileName)
 		if delErr := h.deleteUsecase.Execute(ctx, targetFileName); delErr != nil {
-			return false, fmt.Errorf("[ERROR] failed to delete the conflicting file \"%s\": %w", targetFileName, delErr)
+			cmd.PrintErrf("[ERROR] failed to delete the conflicting file \"%s\": %v\n", targetFileName, delErr)
+			return false, fmt.Errorf("failed to delete conflicting file")
 		}
-		fmt.Printf("Successfully deleted the conflicting file\n\n")
+		cmd.Println("Successfully deleted the conflicting file.")
 		return true, nil
 	}
 	return false, nil

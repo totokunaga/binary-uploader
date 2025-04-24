@@ -48,9 +48,8 @@ func (uc *fileDeleteUseCase) Execute(ctx context.Context, fileName string) e.Cus
 	wp.Start(ctx)
 
 	for _, chunk := range chunks {
-		chunkPath := chunk.FilePath // use closure to capture loop variable
 		wp.Submit(func() error {
-			_ = uc.storageRepo.DeleteChunk(ctx, chunkPath)
+			_ = uc.storageRepo.DeleteFile(ctx, chunk.FilePath)
 			return nil
 		})
 	}

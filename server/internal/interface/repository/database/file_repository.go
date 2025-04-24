@@ -41,7 +41,6 @@ func (r *fileRepository) GetChunksByFileID(ctx context.Context, fileID uint64) (
 
 	err := r.db.WithContext(ctx).
 		Where("parent_id = ?", fileID).
-		Order("chunk_number asc"). // Optional: Order chunks by number
 		Find(&chunkModels).Error
 
 	if err != nil {
@@ -73,7 +72,6 @@ func (r *fileRepository) GetChunksByStatus(ctx context.Context, fileID uint64, s
 	err := r.db.WithContext(ctx).
 		Where("parent_id = ? AND status IN ?", fileID, statusStrings).
 		Find(&chunkModels).Error
-
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return []*entity.FileChunk{}, nil
@@ -270,7 +268,6 @@ func (r *fileRepository) UpdateFileAndChunkStatus(ctx context.Context, fileID ui
 
 // IncrementUploadedChunks increments the uploaded chunks counter of a file
 func (r *fileRepository) IncrementUploadedChunks(ctx context.Context, id uint64) (uint, uint, e.CustomError) {
-	// TODO: should use mutex? or MVCC make it concurrent safe?
 	tx := r.db.WithContext(ctx).Begin()
 
 	if err := tx.Model(&FileModel{}).Where("id = ?", id).Update("uploaded_chunks", gorm.Expr("uploaded_chunks + ?", 1)).Error; err != nil {

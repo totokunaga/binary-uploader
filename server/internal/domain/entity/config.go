@@ -7,24 +7,44 @@ import (
 	"time"
 )
 
+const (
+	DefaultPort                = 8080
+	DefaultBaseStorageDir      = "./storage"
+	DefaultUploadTimeoutSecond = 5
+	DefaultWorkerPoolSize      = 5
+	DefaultStreamBufferSize    = 1024 * 1024 // 1MB
+
+	DefaultDBHost               = "localhost"
+	DefaultDBPort               = 3306
+	DefaultDBUser               = "root"
+	DefaultDBPassword           = ""
+	DefaultDBName               = "fs_store"
+	DefaultDBConnTimeout        = 10
+	DefaultDBMaxIdleConns       = 10
+	DefaultDBMaxOpenConns       = 100
+	DefaultDBConnMaxLifetimeMin = 60
+)
+
 // Config represents the application configuration loaded from environment variables
 type Config struct {
 	// Server config
-	Port        int
-	MaxBodySize int
+	Port int
 
 	// Storage config
 	BaseStorageDir      string
-	UploadSizeLimit     uint64
+	StreamBufferSize    int
 	UploadTimeoutSecond time.Duration
 
 	// Database config
-	DBHost        string
-	DBPort        int
-	DBUser        string
-	DBPassword    string
-	DBName        string
-	DBConnTimeout int
+	DBHost            string
+	DBPort            int
+	DBUser            string
+	DBPassword        string
+	DBName            string
+	DBConnTimeout     int
+	DBMaxIdleConns    int
+	DBMaxOpenConns    int
+	DBConnMaxLifetime time.Duration
 
 	// Worker pool config
 	WorkerPoolSize int
@@ -34,24 +54,26 @@ type Config struct {
 func NewConfig() *Config {
 	return &Config{
 		// Server config
-		Port:        GetEnvInt("PORT", 8080),
-		MaxBodySize: GetEnvInt("MAX_BODY_SIZE", 10*1024*1024), // 10 MiB default
+		Port: GetEnvInt("PORT", DefaultPort),
 
 		// Storage config
-		BaseStorageDir:      GetEnv("BASE_STORAGE_DIR", "."),
-		UploadSizeLimit:     GetEnvUint64("UPLOAD_SIZE_LIMIT", 100*1024*1024), // 100 MiB default
-		UploadTimeoutSecond: time.Duration(GetEnvInt("UPLOAD_TIMEOUT", 5)) * time.Second,
+		BaseStorageDir:      GetEnv("BASE_STORAGE_DIR", DefaultBaseStorageDir),
+		StreamBufferSize:    GetEnvInt("STREAM_BUFFER_SIZE", DefaultStreamBufferSize),
+		UploadTimeoutSecond: time.Duration(GetEnvInt("UPLOAD_TIMEOUT_SECOND", DefaultUploadTimeoutSecond)) * time.Second,
 
 		// Database config
-		DBHost:        GetEnv("DB_HOST", "localhost"),
-		DBPort:        GetEnvInt("DB_PORT", 3306),
-		DBUser:        GetEnv("DB_USER", "root"),
-		DBPassword:    GetEnv("DB_PASSWORD", ""),
-		DBName:        GetEnv("DB_NAME", "fs_store"),
-		DBConnTimeout: GetEnvInt("DB_CONN_TIMEOUT", 10), // seconds
+		DBHost:            GetEnv("DB_HOST", DefaultDBHost),
+		DBPort:            GetEnvInt("DB_PORT", DefaultDBPort),
+		DBUser:            GetEnv("DB_USER", DefaultDBUser),
+		DBPassword:        GetEnv("DB_PASSWORD", DefaultDBPassword),
+		DBName:            GetEnv("DB_NAME", DefaultDBName),
+		DBConnTimeout:     GetEnvInt("DB_CONN_TIMEOUT", DefaultDBConnTimeout),
+		DBMaxIdleConns:    GetEnvInt("DB_MAX_IDLE_CONNS", DefaultDBMaxIdleConns),
+		DBMaxOpenConns:    GetEnvInt("DB_MAX_OPEN_CONNS", DefaultDBMaxOpenConns),
+		DBConnMaxLifetime: time.Duration(GetEnvInt("DB_CONN_MAX_LIFETIME_MIN", DefaultDBConnMaxLifetimeMin)) * time.Minute,
 
 		// Worker pool config
-		WorkerPoolSize: GetEnvInt("WORKER_POOL_SIZE", 5),
+		WorkerPoolSize: GetEnvInt("WORKER_POOL_SIZE", DefaultWorkerPoolSize),
 	}
 }
 
@@ -70,11 +92,13 @@ func GetEnvInt(key string, defaultValue int) int {
 	if value == "" {
 		return defaultValue
 	}
+
 	intValue, err := strconv.Atoi(value)
 	if err != nil {
 		log.Printf("invalid value for %s: %s, using default: %d", key, value, defaultValue)
 		return defaultValue
 	}
+
 	return intValue
 }
 
@@ -84,10 +108,12 @@ func GetEnvUint64(key string, defaultValue uint64) uint64 {
 	if value == "" {
 		return defaultValue
 	}
+
 	uint64Value, err := strconv.ParseUint(value, 10, 64)
 	if err != nil {
 		log.Printf("invalid value for %s: %s, using default: %d", key, value, defaultValue)
 		return defaultValue
 	}
+
 	return uint64Value
 }

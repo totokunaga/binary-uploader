@@ -63,7 +63,7 @@ func (h *FileUploadHandler) ExecuteInit(ctx *gin.Context) {
 
 	// Validate file name
 	if fileName == "." || fileName == ".." {
-		sendErrorResponse(ctx, h.logger, e.NewInvalidInputError(errors.New("invalid file name"), ""))
+		sendErrorResponse(ctx, h.logger, e.NewInvalidInputError(errors.New("invalid file name"), fileName))
 		return
 	}
 
@@ -71,15 +71,6 @@ func (h *FileUploadHandler) ExecuteInit(ctx *gin.Context) {
 	var req InitUploadRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		sendErrorResponse(ctx, h.logger, e.NewInvalidInputError(err, "invalid request body"))
-		return
-	}
-
-	// Check if the file size is too large
-	if req.TotalSize > h.config.UploadSizeLimit {
-		sendErrorResponse(ctx, h.logger, e.NewInvalidInputError(
-			errors.New("total_size is too large"),
-			fmt.Sprintf("must be less than %d bytes", h.config.UploadSizeLimit),
-		))
 		return
 	}
 
@@ -118,7 +109,6 @@ func (h *FileUploadHandler) ExecuteInit(ctx *gin.Context) {
 
 // UploadChunk handles file chunk upload
 func (h *FileUploadHandler) Execute(ctx *gin.Context) {
-	// Get the upload ID and chunk ID from the URL
 	fileIDStr := ctx.Param("file_id")
 	chunkNumberStr := ctx.Param("chunk_number")
 
@@ -153,16 +143,15 @@ func (h *FileUploadHandler) Execute(ctx *gin.Context) {
 		ChunkNumber: chunkNumber,
 		Reader:      reader,
 	})
-
 	if ucErr == nil {
 		ctx.JSON(http.StatusOK, UploadResponse{Status: "OK"})
 		return
 	}
-
 	// Updates file and chunk status to the failed status
 	if failRecovErr := h.fileUploadUseCase.ExecuteFailRecovery(ctx.Request.Context(), fileID, chunkNumber); failRecovErr != nil {
 		sendErrorResponse(ctx, h.logger, failRecovErr)
 		return
 	}
+
 	sendErrorResponse(ctx, h.logger, ucErr)
 }

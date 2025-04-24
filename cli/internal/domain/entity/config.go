@@ -2,13 +2,12 @@ package entity
 
 const (
 	DefaultServerURL          = "http://localhost:38080"
-	DefaultChunkSize          = 1024 * 128 // 128 KiB
+	DefaultChunkSize          = 1024 * 256 // 256 KiB
 	DefaultRetries            = 3
-	DefaultMaxConcurrency     = 5
+	DefaultMaxConcurrency     = 10
 	DefaultCompressionEnabled = false
 )
 
-// Define custom types for context keys
 type ContextKey string
 
 const (

@@ -10,33 +10,38 @@ import (
 
 	"golang.org/x/exp/slog"
 
+	"github.com/tomoya.tokunaga/server/internal/domain/entity"
 	e "github.com/tomoya.tokunaga/server/internal/domain/entity/error"
 )
 
 // storageRepository implements the repository.StorageRepository interface
 type storageRepository struct {
-	logger         *slog.Logger
+	config *entity.Config
+	logger *slog.Logger
+	// stores the available space in bytes to tell if a new file upload can fit
+	// in the storage (using syscall can be expensive, so in-memory is used)
 	availableSpace uint64
 	spaceMutex     sync.RWMutex
 }
 
 // NewStorageRepository creates a new filesystem storage repository
-func NewStorageRepository(logger *slog.Logger, baseStorageDir string) FileStorageRepository {
+func NewStorageRepository(config *entity.Config, logger *slog.Logger) FileStorageRepository {
 	repo := &storageRepository{
 		logger: logger,
+		config: config,
 	}
 
-	// First create the base directory if it doesn't exist
-	if err := os.MkdirAll(baseStorageDir, 0755); err != nil {
-		logger.Error("Failed to create base storage directory", "path", baseStorageDir, "error", err)
+	// Create the base directory if it doesn't exist
+	if err := os.MkdirAll(config.BaseStorageDir, 0755); err != nil {
+		logger.Error("Failed to create base storage directory", "path", config.BaseStorageDir, "error", err)
 		// when the directory is not created, the repository cannot work
 		panic(err)
 	}
 
 	// Initialize available space
 	var stat syscall.Statfs_t
-	if err := syscall.Statfs(baseStorageDir, &stat); err != nil {
-		logger.Error("Failed to initialize available space", "path", baseStorageDir, "error", err)
+	if err := syscall.Statfs(config.BaseStorageDir, &stat); err != nil {
+		logger.Error("Failed to initialize available space", "path", config.BaseStorageDir, "error", err)
 		// when the directory is not there or server cannot access it, the repository cannot work
 		panic(err)
 	}
@@ -45,11 +50,20 @@ func NewStorageRepository(logger *slog.Logger, baseStorageDir string) FileStorag
 	return repo
 }
 
+// CreateDirectory creates a directory at the given path
+func (r *storageRepository) CreateDirectory(ctx context.Context, dirPath string) e.CustomError {
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		return e.NewFileStorageError(err, "failed to create directory")
+	}
+
+	return nil
+}
+
 // WriteChunk writes the file chunk to the storage
 func (r *storageRepository) WriteChunk(ctx context.Context, reader io.Reader, filePath string) e.CustomError {
 	// Ensure the directory exists
 	dirPath := filepath.Dir(filePath)
-	if err := os.MkdirAll(dirPath, 0755); err != nil { // TODO: do we need this? upload init already creates the directory (but this is more decoupled?)
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
 		return e.NewFileStorageError(err, "failed to create directory")
 	}
 
@@ -64,8 +78,8 @@ func (r *storageRepository) WriteChunk(ctx context.Context, reader io.Reader, fi
 		}
 	}()
 
-	// Write the file content in chunks of 1MB
-	buffer := make([]byte, 1024*1024) // TODO: the size must be configured by Config struct
+	// Read the chunk and write it to the file
+	buffer := make([]byte, r.config.StreamBufferSize)
 	for {
 		select {
 		case <-ctx.Done():
@@ -76,7 +90,7 @@ func (r *storageRepository) WriteChunk(ctx context.Context, reader io.Reader, fi
 			if err != nil && err != io.EOF {
 				return e.NewFileStorageError(err, "failed to read from reader")
 			}
-			if n == 0 { // TODO: not err == io.EOF?
+			if n == 0 {
 				return nil
 			}
 
@@ -88,26 +102,14 @@ func (r *storageRepository) WriteChunk(ctx context.Context, reader io.Reader, fi
 	}
 }
 
-// DeleteChunk deletes a file chunk from the storage
-func (r *storageRepository) DeleteChunk(ctx context.Context, filePath string) e.CustomError {
-	// Check if the file exists
+// DeleteFile deletes a file from the storage
+func (r *storageRepository) DeleteFile(ctx context.Context, filePath string) e.CustomError {
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		// File already deleted or does not exist, nothing to do
 		return nil
 	}
 
-	// Delete the file
 	if err := os.Remove(filePath); err != nil {
 		return e.NewFileStorageError(err, "failed to delete file")
-	}
-
-	return nil
-}
-
-// CreateDirectory creates a directory at the given path
-func (r *storageRepository) CreateDirectory(ctx context.Context, dirPath string) e.CustomError {
-	if err := os.MkdirAll(dirPath, 0755); err != nil {
-		return e.NewFileStorageError(err, "failed to create directory")
 	}
 
 	return nil
@@ -115,13 +117,10 @@ func (r *storageRepository) CreateDirectory(ctx context.Context, dirPath string)
 
 // DeleteDirectory deletes a directory at the given path
 func (r *storageRepository) DeleteDirectory(ctx context.Context, dirPath string) e.CustomError {
-	// Check if the directory exists
 	if _, err := os.Stat(dirPath); os.IsNotExist(err) {
-		// Directory already deleted or does not exist, nothing to do
 		return nil
 	}
 
-	// Delete the directory and all its contents
 	if err := os.RemoveAll(dirPath); err != nil {
 		return e.NewFileStorageError(err, "failed to delete directory")
 	}
@@ -129,40 +128,36 @@ func (r *storageRepository) DeleteDirectory(ctx context.Context, dirPath string)
 	return nil
 }
 
+// // DeleteFile deletes a file at the given path
+// func (r *storageRepository) DeleteFile(ctx context.Context, filePath string) e.CustomError {
+// 	// Check if the file exists
+// 	_, err := os.Stat(filePath)
+// 	if err != nil {
+// 		if os.IsNotExist(err) {
+// 			return nil
+// 		}
+// 		return e.NewFileStorageError(err, "failed to check file status before deletion")
+// 	}
+
+// 	// Delete the file
+// 	if err := os.Remove(filePath); err != nil {
+// 		return e.NewFileStorageError(err, "failed to delete file")
+// 	}
+
+// 	return nil
+// }
+
 // FileExists checks if a file exists at the given path
 func (r *storageRepository) FileExists(ctx context.Context, filePath string) (bool, e.CustomError) {
-	// Check if the file exists
 	_, err := os.Stat(filePath)
 	if err == nil {
-		// File exists
 		return true, nil
 	}
 	if os.IsNotExist(err) {
-		// File does not exist
 		return false, nil
 	}
 
-	// Another error occurred
 	return false, e.NewFileStorageError(err, "failed to check if file exists")
-}
-
-// DeleteFile deletes a file at the given path
-func (r *storageRepository) DeleteFile(ctx context.Context, filePath string) e.CustomError {
-	// Check if the file exists
-	_, err := os.Stat(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return e.NewFileStorageError(err, "failed to check file status before deletion")
-	}
-
-	// Delete the file
-	if err := os.Remove(filePath); err != nil {
-		return e.NewFileStorageError(err, "failed to delete file")
-	}
-
-	return nil
 }
 
 // GetAvailableSpace returns the available space in bytes at the given path
@@ -172,8 +167,7 @@ func (r *storageRepository) GetAvailableSpace(ctx context.Context, dirPath strin
 	return r.availableSpace
 }
 
-// UpdateAvailableSpace updates the available space by adding or subtracting the given size in bytes
-// size should be positive when adding space (file deleted) and negative when removing space (file added)
+// UpdateAvailableSpace updates the available space amount
 func (r *storageRepository) UpdateAvailableSpace(sizeChange int64) {
 	r.spaceMutex.Lock()
 	defer r.spaceMutex.Unlock()

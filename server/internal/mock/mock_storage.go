@@ -56,20 +56,6 @@ func (mr *MockFileStorageRepositoryMockRecorder) CreateDirectory(ctx, dirPath an
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDirectory", reflect.TypeOf((*MockFileStorageRepository)(nil).CreateDirectory), ctx, dirPath)
 }
 
-// DeleteChunk mocks base method.
-func (m *MockFileStorageRepository) DeleteChunk(ctx context.Context, filePath string) error.CustomError {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteChunk", ctx, filePath)
-	ret0, _ := ret[0].(error.CustomError)
-	return ret0
-}
-
-// DeleteChunk indicates an expected call of DeleteChunk.
-func (mr *MockFileStorageRepositoryMockRecorder) DeleteChunk(ctx, filePath any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteChunk", reflect.TypeOf((*MockFileStorageRepository)(nil).DeleteChunk), ctx, filePath)
-}
-
 // DeleteDirectory mocks base method.
 func (m *MockFileStorageRepository) DeleteDirectory(ctx context.Context, dirPath string) error.CustomError {
 	m.ctrl.T.Helper()

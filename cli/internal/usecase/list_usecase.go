@@ -4,23 +4,24 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/tomoya.tokunaga/cli/internal/domain/entity"
 	"github.com/tomoya.tokunaga/cli/internal/infrastructure"
 )
 
 // ListUsecase handles file listing operations
-type ListUsecase struct {
+type listUsecase struct {
 	fileServerHttpClient infrastructure.FileServerHttpClient
 }
 
 // NewListUsecase creates a new list usecase
-func NewListUsecase() *ListUsecase {
-	return &ListUsecase{
-		fileServerHttpClient: infrastructure.NewFileServerV1HttpClient(),
+func NewListUsecase(fileClient infrastructure.FileServerHttpClient) *listUsecase {
+	return &listUsecase{
+		fileServerHttpClient: fileClient,
 	}
 }
 
 // Execute lists files available on the server
-func (s *ListUsecase) Execute(ctx context.Context) (*infrastructure.FileInfo, error) {
+func (s *listUsecase) Execute(ctx context.Context) (*entity.ListFilesResp, error) {
 	// Get file list from server
 	fileInfos, err := s.fileServerHttpClient.ListFiles(ctx)
 	if err != nil {

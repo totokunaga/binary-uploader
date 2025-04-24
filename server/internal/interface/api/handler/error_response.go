@@ -6,12 +6,14 @@ import (
 	"golang.org/x/exp/slog"
 )
 
+// ErrorResponse represents the structure of the error response
 type ErrorResponse struct {
 	Error      string `json:"error"`
 	ErrorCode  string `json:"code"`
 	StatusCode int    `json:"status_code"`
 }
 
+// sendErrorResponse forms an error response from a given custom error and sends it to the client
 func sendErrorResponse(ctx *gin.Context, logger *slog.Logger, err e.CustomError) {
 	logger.Error("error",
 		"error", err.Error(),

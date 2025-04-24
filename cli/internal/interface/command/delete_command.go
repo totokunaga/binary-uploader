@@ -10,11 +10,11 @@ import (
 )
 
 type DeleteCommandHandler struct {
-	deleteUsecase *usecase.DeleteUsecase
+	deleteUsecase usecase.DeleteUsecase
 }
 
 func NewDeleteCommandHandler(
-	deleteUsecase *usecase.DeleteUsecase,
+	deleteUsecase usecase.DeleteUsecase,
 ) *DeleteCommandHandler {
 	return &DeleteCommandHandler{
 		deleteUsecase: deleteUsecase,
@@ -29,24 +29,25 @@ func (h *DeleteCommandHandler) Execute() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// There's no need to check the existence of the first argument because cobra.ExactArgs(1) handles it
-			fileName := args[0]
+			rawFileName := args[0]
+
+			// Use just the filename part if a path was provided
+			fileName := filepath.Base(rawFileName)
+			if fileName == "" || fileName == "." || fileName == "/" {
+				return fmt.Errorf("[ERROR] Invalid file name: %s. Please provide a valid file name", rawFileName)
+			}
 
 			// Retrieve context from command
 			ctx := cmd.Context()
 
-			// Use just the filename part if a path was provided
-			fileName = filepath.Base(fileName)
-			if fileName == "" {
-				return fmt.Errorf("invalid file name")
-			}
-
 			// Executing the delete usecase
-			fmt.Printf("Deleting '%s'...\n", fileName)
+			cmd.Printf("Deleting '%s'...\n", fileName)
 			if err := h.deleteUsecase.Execute(ctx, fileName); err != nil {
-				return fmt.Errorf("delete failed: %w", err)
+				cmd.PrintErrf("[ERROR] Delete '%s' failed: %v\n", fileName, err)
+				return nil // Don't return error to cobra, just print it
 			}
 
-			fmt.Println("Successfully deleted!")
+			cmd.Println("Successfully deleted!")
 			return nil
 		},
 	}

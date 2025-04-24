@@ -112,7 +112,6 @@ func (uc *fileUploadUseCase) ExecuteInit(ctx context.Context, input FileUploadUs
 	if err != nil {
 		return nil, nil, err
 	}
-	// TODO: invalidChunks could be empty due to the failure in completed_chunks counter increment or status update
 	for _, chunk := range invalidChunks {
 		if err := uc.storageRepo.DeleteFile(ctx, chunk.FilePath); err != nil {
 			return nil, nil, err

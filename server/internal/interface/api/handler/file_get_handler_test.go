@@ -25,7 +25,7 @@ import (
 func setupTestFileGetHandler(t *testing.T, useCase usecase.FileGetUseCase) (*handler.FileGetHandler, *gin.Engine) {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	config := &entity.Config{UploadTimeoutSecond: 30}
+	config := &entity.Config{}
 	h := handler.NewFileGetHandler(useCase, config, logger)
 
 	gin.SetMode(gin.TestMode)
@@ -132,7 +132,6 @@ func TestFileGetHandler_ExecuteGetStats(t *testing.T) {
 		CreatedAt:   time.Now().Add(-time.Hour),
 		UpdatedAt:   time.Now().Add(-time.Hour),
 	}
-	uploadTimeoutDuration := 30 * time.Second
 
 	mockNotFoundError := e.NewNotFoundError(errors.New("file not found"), "File stats not found for "+testFileName)
 	mockForbiddenError := e.NewInvalidInputError(errors.New("access denied"), "User does not have permission to access file stats")
@@ -155,8 +154,7 @@ func TestFileGetHandler_ExecuteGetStats(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody: &handler.FileGetStatsResponse{
-				File:                testFile,
-				UploadTimeoutSecond: uploadTimeoutDuration,
+				File: testFile,
 			},
 			expectError: false,
 		},

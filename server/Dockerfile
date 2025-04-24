@@ -11,7 +11,7 @@ COPY . .
 # Build the entire package in the cmd directory
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags='-w -s' -o server ./cmd
 
-# --- Final Production Stage ---
+# ----- Production Stage -----
 FROM alpine:latest
 
 WORKDIR /root/

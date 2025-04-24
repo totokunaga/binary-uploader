@@ -33,9 +33,6 @@ type Application struct {
 func HTTPServerProvider(config *entity.Config, router *router.Router) *http.Server {
 	r := router.Engine()
 
-	// Configure file upload size
-	r.MaxMultipartMemory = int64(config.MaxBodySize)
-
 	return &http.Server{
 		Addr:    fmt.Sprintf(":%d", config.Port),
 		Handler: r,

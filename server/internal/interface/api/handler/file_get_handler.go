@@ -24,7 +24,7 @@ type FileGetResponse struct {
 
 type FileGetStatsResponse struct {
 	*entity.File
-	UploadTimeoutSecond time.Duration `json:"upload_timeout_second"`
+	UploadTimeoutSecond time.Duration `json:"upload_timeout_second"` // used to identify an orphaned file in the cli
 }
 
 func NewFileGetHandler(fileGetUseCase usecase.FileGetUseCase, config *entity.Config, logger *slog.Logger) *FileGetHandler {

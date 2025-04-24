@@ -11,61 +11,38 @@ import (
 )
 
 // InitUploadUsecase handles initializing file uploads
-type InitUploadUsecase struct {
+type initUploadUsecase struct {
 	fileServerHttpClient infrastructure.FileServerHttpClient
 }
 
 // NewInitUploadUsecase creates a new init upload usecase
-func NewInitUploadUsecase() *InitUploadUsecase {
-	client := infrastructure.NewFileServerV1HttpClient()
-	return &InitUploadUsecase{
-		fileServerHttpClient: client,
+func NewInitUploadUsecase(fileClient infrastructure.FileServerHttpClient) *initUploadUsecase {
+	return &initUploadUsecase{
+		fileServerHttpClient: fileClient,
 	}
 }
 
-type UploadPrecheckUsecaseOutput struct {
-	Checksum string
-	FileSize int64
-}
-
-type UploadUsecaseOutput struct {
-	UploadID              uint64
-	UploadChunkSize       uint64
-	MissingChunkNumberMap map[uint64]struct{}
-}
-
-// PostPrecheckAction defines the possible actions after the precheck.
-type PostPrecheckAction int
-
-const (
-	ProceedWithInit PostPrecheckAction = iota
-	ProceedWithReUpload
-	SuggestExistingEntryDeletion
-	Exits
-	ReturnError
-)
-
 // Execute prechecks the file before initializing a file upload on the server
-func (s *InitUploadUsecase) ExecutePrecheck(ctx context.Context, filePath string, targetFileName string) (action PostPrecheckAction, output *UploadPrecheckUsecaseOutput, err error) {
-	_, fileSize, err := checkLocalFileExists(filePath)
+func (s *initUploadUsecase) ExecutePrecheck(ctx context.Context, input *InitUploadPrecheckUsecaseInput) (action PostPrecheckAction, output *InitUploadPrecheckUsecaseOutput, err error) {
+	_, fileSize, err := checkLocalFileExists(input.FilePath)
 	if err != nil {
 		return ReturnError, nil, err
 	}
 
-	checksum, err := util.CalculateChecksum(filePath)
+	checksum, err := util.CalculateChecksum(input.FilePath)
 	if err != nil {
 		return ReturnError, nil, fmt.Errorf("failed to calculate file checksum: %w", err)
 	}
 
-	output = &UploadPrecheckUsecaseOutput{
+	output = &InitUploadPrecheckUsecaseOutput{
 		Checksum: checksum,
 		FileSize: fileSize,
 	}
 
 	// checks the existence of the file on the server using targetFileName
-	fileStats, err := s.fileServerHttpClient.GetFileStats(ctx, targetFileName)
+	fileStats, err := s.fileServerHttpClient.GetFileStats(ctx, input.TargetFileName)
 	if err != nil {
-		return ReturnError, nil, fmt.Errorf("failed to get file stats for '%s': %w", targetFileName, err)
+		return ReturnError, nil, fmt.Errorf("failed to get file stats for '%s': %w", input.TargetFileName, err)
 	}
 	if fileStats == nil {
 		return ProceedWithInit, output, nil
@@ -90,12 +67,12 @@ func (s *InitUploadUsecase) ExecutePrecheck(ctx context.Context, filePath string
 	case entity.FileStatusInProgress:
 		// the file upload is being processed by other client or something went wrong on the server side (e.g. server crash,
 		// database down, etc) and the file data is orphaned. determine if the file is orphaned and proceed with re-uploading
-		// missing chunks if the last updated time is older than 5 minutes.
+		// missing chunks if the last updated time is older than the server's upload timeout.
 		isOrphaned := fileStats.UpdatedAt.Before(time.Now().Add(-fileStats.UploadTimeoutSecond))
 		if isOrphaned {
 			return ProceedWithReUpload, output, nil
 		}
-		return Exits, nil, fmt.Errorf("remote file server processing %s with the same content currently. try again later", targetFileName)
+		return Exits, nil, fmt.Errorf("remote file server processing '%s' with the same content currently or faces some problems (database crash, server error, etc). try again later, or delete the existing entry and retry the upload", input.TargetFileName)
 	}
 
 	// when the file is one of deleted status (DELETE_INITIALIZED, DELETE_IN_PROGRESS, DELETE_FAILED), suggest to
@@ -104,37 +81,37 @@ func (s *InitUploadUsecase) ExecutePrecheck(ctx context.Context, filePath string
 }
 
 // Execute initializes a file upload on the server
-func (s *InitUploadUsecase) Execute(ctx context.Context, filePath string, targetFileName string, originalChecksum string, chunkSize int64, isReUpload bool) (*UploadUsecaseOutput, error) {
-	_, fileSize, err := checkLocalFileExists(filePath)
+func (s *initUploadUsecase) Execute(ctx context.Context, input *InitUploadUsecaseInput) (*UploadUsecaseOutput, error) {
+	_, fileSize, err := checkLocalFileExists(input.FilePath)
 	if err != nil {
 		return nil, err
 	}
 
 	// checks the file content is the same as the original checksum in precheck
-	checksum, err := util.CalculateChecksum(filePath)
+	checksum, err := util.CalculateChecksum(input.FilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate file checksum: %w", err)
 	}
-	if checksum != originalChecksum {
-		return nil, fmt.Errorf("file content has changed for local file '%s' since precheck", filePath)
+	if checksum != input.OriginalChecksum {
+		return nil, fmt.Errorf("file content has changed for local file '%s' since precheck", input.FilePath)
 	}
 
 	// Calculate numChunks as int64
-	numChunks := (fileSize + chunkSize - 1) / chunkSize
+	numChunks := (fileSize + input.ChunkSize - 1) / input.ChunkSize
 	reqBody := infrastructure.UploadInitRequest{
 		TotalSize:   fileSize,
 		TotalChunks: numChunks,
-		ChunkSize:   chunkSize,
+		ChunkSize:   input.ChunkSize,
 		Checksum:    checksum,
-		IsReUpload:  isReUpload,
+		IsReUpload:  input.IsReUpload,
 	}
-	res, err := s.fileServerHttpClient.InitUpload(ctx, targetFileName, reqBody)
+	res, err := s.fileServerHttpClient.InitUpload(ctx, input.TargetFileName, reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize upload for '%s': %w", targetFileName, err)
+		return nil, fmt.Errorf("failed to initialize upload for '%s': %w", input.TargetFileName, err)
 	}
 
 	// populate values required to re-upload failed chunks from previously upload attempts
-	uploadChunkSize := chunkSize
+	uploadChunkSize := input.ChunkSize
 	missingChunkNumberMap := make(map[uint64]struct{})
 	if res.MissingChunkInfo != nil {
 		uploadChunkSize = int64(res.MissingChunkInfo.MaxChunkSize)

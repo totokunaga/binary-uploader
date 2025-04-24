@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/wire"
 	"github.com/spf13/cobra"
+	"github.com/tomoya.tokunaga/cli/internal/infrastructure"
 	"github.com/tomoya.tokunaga/cli/internal/interface/command"
 	"github.com/tomoya.tokunaga/cli/internal/usecase"
 	"golang.org/x/exp/slog"
@@ -25,34 +26,34 @@ func LoggerProvider() *slog.Logger {
 // ----------------------------------------------------------------
 // Usecase Providers
 // ----------------------------------------------------------------
-func InitUploadUsecaseProvider() *usecase.InitUploadUsecase {
-	return usecase.NewInitUploadUsecase()
+func InitUploadUsecaseProvider() usecase.InitUploadUsecase {
+	return usecase.NewInitUploadUsecase(infrastructure.NewFileServerV1HttpClient())
 }
 
-func UploadUsecaseProvider() *usecase.UploadUsecase {
-	return usecase.NewUploadUsecase()
+func UploadUsecaseProvider() usecase.UploadUsecase {
+	return usecase.NewUploadUsecase(infrastructure.NewFileServerV1HttpClient())
 }
 
-func DeleteFileUsecaseProvider() *usecase.DeleteUsecase {
-	return usecase.NewDeleteUsecase()
+func DeleteFileUsecaseProvider() usecase.DeleteUsecase {
+	return usecase.NewDeleteUsecase(infrastructure.NewFileServerV1HttpClient())
 }
 
-func ListUsecaseProvider() *usecase.ListUsecase {
-	return usecase.NewListUsecase()
+func ListUsecaseProvider() usecase.ListUsecase {
+	return usecase.NewListUsecase(infrastructure.NewFileServerV1HttpClient())
 }
 
 // UploadCommandProvider provides the upload command
-func UploadCommandProvider(initUploadUsecase *usecase.InitUploadUsecase, uploadUsecase *usecase.UploadUsecase, deleteFileUsecase *usecase.DeleteUsecase) UploadCommand {
+func UploadCommandProvider(initUploadUsecase usecase.InitUploadUsecase, uploadUsecase usecase.UploadUsecase, deleteFileUsecase usecase.DeleteUsecase) UploadCommand {
 	return UploadCommand(command.NewUploadCommandHandler(initUploadUsecase, uploadUsecase, deleteFileUsecase).Execute())
 }
 
 // DeleteCommandProvider provides the delete command
-func DeleteCommandProvider(deleteUsecase *usecase.DeleteUsecase) DeleteCommand {
+func DeleteCommandProvider(deleteUsecase usecase.DeleteUsecase) DeleteCommand {
 	return DeleteCommand(command.NewDeleteCommandHandler(deleteUsecase).Execute())
 }
 
 // ListCommandProvider provides the list command
-func ListCommandProvider(listUsecase *usecase.ListUsecase) ListCommand {
+func ListCommandProvider(listUsecase usecase.ListUsecase) ListCommand {
 	return ListCommand(command.NewListCommandHandler(listUsecase).Execute())
 }
 

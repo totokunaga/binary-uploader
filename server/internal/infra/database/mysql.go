@@ -8,24 +8,32 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/tomoya.tokunaga/server/internal/domain/entity"
-	mysqldriver "github.com/tomoya.tokunaga/server/internal/interface/repository/database"
+	"github.com/tomoya.tokunaga/server/internal/interface/repository/database"
 )
 
 // NewDB creates and initializes the database connection
 func NewDB(config *entity.Config, logger *slog.Logger) (*gorm.DB, error) {
-	// Build connection string
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local&timeout=%ds",
 		config.DBUser, config.DBPassword, config.DBHost, config.DBPort, config.DBName, config.DBConnTimeout)
 
-	// Connect to database
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		logger.Error("failed to connect to database", "error", err)
 		return nil, err
 	}
 
-	// Auto-migrate the database models
-	if err := db.AutoMigrate(&mysqldriver.FileModel{}, &mysqldriver.FileChunkModel{}); err != nil {
+	// Configure connection pool
+	sqlDB, err := db.DB()
+	if err != nil {
+		logger.Error("failed to get database connection", "error", err)
+		return nil, err
+	}
+	sqlDB.SetMaxIdleConns(config.DBMaxIdleConns)
+	sqlDB.SetMaxOpenConns(config.DBMaxOpenConns)
+	sqlDB.SetConnMaxLifetime(config.DBConnMaxLifetime)
+
+	// Auto-migrate the database based on the models
+	if err := db.AutoMigrate(&database.FileModel{}, &database.FileChunkModel{}); err != nil {
 		logger.Error("failed to auto-migrate database", "error", err)
 		return nil, err
 	}

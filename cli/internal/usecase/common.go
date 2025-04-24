@@ -17,7 +17,7 @@ func checkLocalFileExists(filePath string) (string, int64, error) {
 	}
 
 	// checks the file isn't empty
-	fileSize := fileInfo.Size() // TODO: what if the file size can't fit int64
+	fileSize := fileInfo.Size()
 	if fileSize == 0 {
 		return "", 0, fmt.Errorf("file is empty")
 	}

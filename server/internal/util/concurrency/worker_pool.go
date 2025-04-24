@@ -5,17 +5,14 @@ import (
 	"sync"
 )
 
-// Task represents a function that can be executed by a worker.
 type Task func() error
 
-// WorkerPool manages a pool of workers that process tasks concurrently.
 type WorkerPool struct {
-	tasks   chan Task
-	wg      sync.WaitGroup
-	errChan chan error
+	tasks   chan Task      // Channel to submit tasks
+	errChan chan error     // Channel to collect errors
+	wg      sync.WaitGroup // WaitGroup for the workers
 }
 
-// NewWorkerPool creates a new worker pool with the specified number of workers.
 func NewWorkerPool(numWorkers int) *WorkerPool {
 	return &WorkerPool{
 		tasks:   make(chan Task),

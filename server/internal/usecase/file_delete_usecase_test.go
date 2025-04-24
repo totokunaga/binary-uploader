@@ -66,8 +66,8 @@ func TestFileDeleteUseCase_Execute(t *testing.T) {
 				mockFileRepo.EXPECT().GetFileByName(ctx, testFileName).Return(testFile, nil)
 				mockFileRepo.EXPECT().GetChunksByFileID(ctx, testFileID).Return(testChunks, nil)
 				// Concurrent deletion, order doesn't matter, called for each chunk
-				mockStorageRepo.EXPECT().DeleteChunk(gomock.Any(), testChunks[0].FilePath).Return(nil).Times(1)
-				mockStorageRepo.EXPECT().DeleteChunk(gomock.Any(), testChunks[1].FilePath).Return(nil).Times(1)
+				mockStorageRepo.EXPECT().DeleteFile(gomock.Any(), testChunks[0].FilePath).Return(nil).Times(1)
+				mockStorageRepo.EXPECT().DeleteFile(gomock.Any(), testChunks[1].FilePath).Return(nil).Times(1)
 				mockStorageRepo.EXPECT().DeleteDirectory(ctx, testFileDirPath).Return(nil)
 				mockFileRepo.EXPECT().DeleteFileByID(ctx, testFileID).Return(nil)
 				// Expect the call to update available space
@@ -106,7 +106,7 @@ func TestFileDeleteUseCase_Execute(t *testing.T) {
 			setupMocks: func() {
 				mockFileRepo.EXPECT().GetFileByName(ctx, testFileName).Return(testFile, nil)
 				mockFileRepo.EXPECT().GetChunksByFileID(ctx, testFileID).Return(testChunks, nil)
-				mockStorageRepo.EXPECT().DeleteChunk(gomock.Any(), gomock.Any()).Return(nil).AnyTimes() // Assume chunk deletion succeeds or is ignored
+				mockStorageRepo.EXPECT().DeleteFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes() // Assume chunk deletion succeeds or is ignored
 				mockStorageRepo.EXPECT().DeleteDirectory(ctx, testFileDirPath).Return(genericError)
 			},
 			expectedErr: genericError,
@@ -117,13 +117,13 @@ func TestFileDeleteUseCase_Execute(t *testing.T) {
 			setupMocks: func() {
 				mockFileRepo.EXPECT().GetFileByName(ctx, testFileName).Return(testFile, nil)
 				mockFileRepo.EXPECT().GetChunksByFileID(ctx, testFileID).Return(testChunks, nil)
-				mockStorageRepo.EXPECT().DeleteChunk(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+				mockStorageRepo.EXPECT().DeleteFile(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 				mockStorageRepo.EXPECT().DeleteDirectory(ctx, testFileDirPath).Return(nil)
 				mockFileRepo.EXPECT().DeleteFileByID(ctx, testFileID).Return(genericError)
 			},
 			expectedErr: genericError,
 		},
-		// Note: Testing DeleteChunk error is tricky due to concurrency and error suppression.
+		// Note: Testing DeleteFile error is tricky due to concurrency and error suppression.
 		// The current implementation logs the error but returns nil from the worker function.
 		// A robust test might require checking logs or modifying the worker function for testability.
 	}

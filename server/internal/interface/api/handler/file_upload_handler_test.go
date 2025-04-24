@@ -28,7 +28,7 @@ import (
 func setupTestFileUploadHandler(t *testing.T, useCase usecase.FileUploadUseCase) (*handler.FileUploadHandler, *gin.Engine) {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	config := &entity.Config{UploadSizeLimit: 1024 * 1024, UploadTimeoutSecond: 30}
+	config := &entity.Config{}
 	h := handler.NewFileUploadHandler(useCase, config, logger)
 
 	gin.SetMode(gin.TestMode)
@@ -125,20 +125,6 @@ func TestFileUploadHandler_ExecuteInit(t *testing.T) {
 			expectedStatus:   http.StatusBadRequest,
 			expectError:      true,
 			expectedErrorMsg: "invalid request body", // Gin binding error message might vary slightly
-		},
-		{
-			name:          "Error - File size too large",
-			fileNameParam: testFileName,
-			requestBody: handler.InitUploadRequest{
-				Checksum:    "ghi",
-				TotalSize:   2 * 1024 * 1024, // Exceeds limit defined in setup
-				TotalChunks: 2,
-				ChunkSize:   1024 * 1024,
-			},
-			setupMock:        nil,
-			expectedStatus:   http.StatusBadRequest,
-			expectError:      true,
-			expectedErrorMsg: "total_size is too large",
 		},
 		{
 			name:          "Error - Usecase error",

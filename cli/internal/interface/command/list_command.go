@@ -1,19 +1,17 @@
 package command
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/tomoya.tokunaga/cli/internal/usecase"
 )
 
 type ListCommandHandler struct {
-	listUsecase *usecase.ListUsecase
+	listUsecase usecase.ListUsecase
 }
 
 func NewListCommandHandler(
-	listUsecase *usecase.ListUsecase,
+	listUsecase usecase.ListUsecase,
 ) *ListCommandHandler {
 	return &ListCommandHandler{
 		listUsecase: listUsecase,
@@ -31,10 +29,11 @@ func (h *ListCommandHandler) Execute() *cobra.Command {
 
 			files, err := h.listUsecase.Execute(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to list files: %w", err)
+				cmd.PrintErrf("[ERROR] Failed to fetch files: %v\n", err)
+				return nil
 			}
 
-			fmt.Println(files.Files)
+			cmd.Println(files.Files)
 			return nil
 		},
 	}

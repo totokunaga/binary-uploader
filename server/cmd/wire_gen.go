@@ -31,7 +31,7 @@ func InitializeApplication() (*Application, error) {
 		return nil, err
 	}
 	fileRepository := di.FileRepositoryProvider(db)
-	fileStorageRepository := di.StorageRepositoryProvider(logger)
+	fileStorageRepository := di.StorageRepositoryProvider(config, logger)
 	fileUploadUseCase := di.FileUploadUseCaseProvider(fileRepository, fileStorageRepository, config)
 	fileUploadHandler := di.FileUploadHandlerProvider(fileUploadUseCase, config, logger)
 	fileGetUseCase := di.FileGetUseCaseProvider(fileRepository)
@@ -62,8 +62,6 @@ type Application struct {
 // HTTPServerProvider provides the configured HTTP server
 func HTTPServerProvider(config *entity.Config, router2 *router.Router) *http.Server {
 	r := router2.Engine()
-
-	r.MaxMultipartMemory = int64(config.MaxBodySize)
 
 	return &http.Server{
 		Addr:    fmt.Sprintf(":%d", config.Port),

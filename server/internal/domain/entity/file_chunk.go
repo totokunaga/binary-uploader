@@ -15,3 +15,14 @@ type FileChunk struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
+
+// NewFileChunk creates a new FileChunk entity
+func NewFileChunk(parentID uint64, status FileStatus, chunkNumber uint64, size uint64, filePath string) *FileChunk {
+	return &FileChunk{
+		ParentID:    parentID,
+		Status:      status,
+		ChunkNumber: chunkNumber,
+		Size:        size,
+		FilePath:    filePath,
+	}
+}

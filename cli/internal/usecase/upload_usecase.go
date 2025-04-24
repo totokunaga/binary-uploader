@@ -14,24 +14,15 @@ import (
 )
 
 // UploadUsecase handles file upload operations
-type UploadUsecase struct {
+type uploadUsecase struct {
 	fileServerHttpClient infrastructure.FileServerHttpClient
 }
 
 // NewUploadUsecase creates a new upload usecase
-func NewUploadUsecase() *UploadUsecase {
-	return &UploadUsecase{
-		fileServerHttpClient: infrastructure.NewFileServerV1HttpClient(),
+func NewUploadUsecase(fileClient infrastructure.FileServerHttpClient) *uploadUsecase {
+	return &uploadUsecase{
+		fileServerHttpClient: fileClient,
 	}
-}
-
-type UploadUsecaseInput struct {
-	UploadID              uint64
-	FilePath              string
-	ChunkSize             int64
-	IsReUpload            bool
-	MissingChunkNumberMap map[uint64]struct{}
-	ProgressCb            func(size int64)
 }
 
 // Create a buffered channel for chunks
@@ -41,7 +32,7 @@ type chunk struct {
 }
 
 // UploadFile uploads a file to the server
-func (s *UploadUsecase) Execute(ctx context.Context, input *UploadUsecaseInput) error {
+func (s *uploadUsecase) Execute(ctx context.Context, input *UploadUsecaseInput) error {
 	file, err := os.Open(input.FilePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %w", err)
@@ -74,7 +65,7 @@ func (s *UploadUsecase) Execute(ctx context.Context, input *UploadUsecaseInput) 
 					}
 
 					if retry < retries {
-						time.Sleep(time.Second * time.Duration(retry+1)) // TODO: modernize?
+						time.Sleep(time.Second * time.Duration(retry+1))
 					}
 				}
 
@@ -95,7 +86,7 @@ func (s *UploadUsecase) Execute(ctx context.Context, input *UploadUsecaseInput) 
 	chunkID := 0
 
 	for {
-		buffer := make([]byte, input.ChunkSize) // TODO: sync.Pool? / buffer size must be from the input parameter
+		buffer := make([]byte, input.ChunkSize)
 		bytesRead, err := reader.Read(buffer)
 
 		if err != nil && err != io.EOF {

@@ -28,7 +28,9 @@ func LoggerProvider() *slog.Logger {
 	return logger
 }
 
-// DBProvider provides the database connection
+// ----------------------------------------------------------------
+// Infrastructure Providers
+// ----------------------------------------------------------------
 func DBProvider(config *entity.Config, logger *slog.Logger) (*gorm.DB, error) {
 	return database.NewDB(config, logger)
 }
@@ -36,24 +38,17 @@ func DBProvider(config *entity.Config, logger *slog.Logger) (*gorm.DB, error) {
 // ----------------------------------------------------------------
 // Repository Providers
 // ----------------------------------------------------------------
-
 func FileRepositoryProvider(db *gorm.DB) db_repo.FileRepository {
 	return db_repo.NewFileRepository(db)
 }
 
-func StorageRepositoryProvider(logger *slog.Logger) fs_repo.FileStorageRepository {
-	// Get base dir path from env var or use a default
-	baseDir := os.Getenv("STORAGE_BASE_DIR")
-	if baseDir == "" {
-		baseDir = "/tmp/file-uploads" // Default fallback
-	}
-	return fs_repo.NewStorageRepository(logger, baseDir)
+func StorageRepositoryProvider(config *entity.Config, logger *slog.Logger) fs_repo.FileStorageRepository {
+	return fs_repo.NewStorageRepository(config, logger)
 }
 
 // ----------------------------------------------------------------
 // Usecase Providers
 // ----------------------------------------------------------------
-
 func FileGetUseCaseProvider(fileRepo db_repo.FileRepository) usecase.FileGetUseCase {
 	return usecase.NewFileGetUseCase(fileRepo)
 }
@@ -69,7 +64,6 @@ func FileDeleteUseCaseProvider(fileRepo db_repo.FileRepository, storageRepo fs_r
 // ----------------------------------------------------------------
 // Handler Providers
 // ----------------------------------------------------------------
-
 func FileUploadHandlerProvider(fileUploadUseCase usecase.FileUploadUseCase, config *entity.Config, logger *slog.Logger) *handler.FileUploadHandler {
 	return handler.NewFileUploadHandler(fileUploadUseCase, config, logger)
 }
