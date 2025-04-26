@@ -7,15 +7,26 @@ import (
 
 func TestGetEnv(t *testing.T) {
 	// Test default value when env var not set
-	os.Unsetenv("TEST_ENV_VAR")
+	err := os.Unsetenv("TEST_ENV_VAR")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 	value := GetEnv("TEST_ENV_VAR", "default")
 	if value != "default" {
 		t.Errorf("expected default value 'default', got %s", value)
 	}
 
 	// Test env var value when set
-	os.Setenv("TEST_ENV_VAR", "custom")
-	defer os.Unsetenv("TEST_ENV_VAR")
+	err = os.Setenv("TEST_ENV_VAR", "custom")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	defer func() {
+		err := os.Unsetenv("TEST_ENV_VAR")
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+	}()
 
 	value = GetEnv("TEST_ENV_VAR", "default")
 	if value != "custom" {
@@ -25,15 +36,26 @@ func TestGetEnv(t *testing.T) {
 
 func TestGetEnvInt(t *testing.T) {
 	// Test default value when env var not set
-	os.Unsetenv("TEST_ENV_INT")
+	err := os.Unsetenv("TEST_ENV_INT")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 	value := GetEnvInt("TEST_ENV_INT", 42)
 	if value != 42 {
 		t.Errorf("expected default value 42, got %d", value)
 	}
 
 	// Test env var value when set
-	os.Setenv("TEST_ENV_INT", "100")
-	defer os.Unsetenv("TEST_ENV_INT")
+	err = os.Setenv("TEST_ENV_INT", "100")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	defer func() {
+		err := os.Unsetenv("TEST_ENV_INT")
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+	}()
 
 	value = GetEnvInt("TEST_ENV_INT", 42)
 	if value != 100 {
@@ -41,7 +63,10 @@ func TestGetEnvInt(t *testing.T) {
 	}
 
 	// Test invalid int value
-	os.Setenv("TEST_ENV_INT", "invalid")
+	err = os.Setenv("TEST_ENV_INT", "invalid")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 	value = GetEnvInt("TEST_ENV_INT", 42)
 	if value != 42 {
 		t.Errorf("expected default value 42 for invalid input, got %d", value)
@@ -50,15 +75,26 @@ func TestGetEnvInt(t *testing.T) {
 
 func TestGetEnvUint64(t *testing.T) {
 	// Test default value when env var not set
-	os.Unsetenv("TEST_ENV_UINT")
+	err := os.Unsetenv("TEST_ENV_UINT")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 	value := GetEnvUint64("TEST_ENV_UINT", 1024)
 	if value != 1024 {
 		t.Errorf("expected default value 1024, got %d", value)
 	}
 
 	// Test env var value when set
-	os.Setenv("TEST_ENV_UINT", "2048")
-	defer os.Unsetenv("TEST_ENV_UINT")
+	err = os.Setenv("TEST_ENV_UINT", "2048")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	defer func() {
+		err := os.Unsetenv("TEST_ENV_UINT")
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
+	}()
 
 	value = GetEnvUint64("TEST_ENV_UINT", 1024)
 	if value != 2048 {
@@ -66,7 +102,10 @@ func TestGetEnvUint64(t *testing.T) {
 	}
 
 	// Test invalid uint value
-	os.Setenv("TEST_ENV_UINT", "invalid")
+	err = os.Setenv("TEST_ENV_UINT", "invalid")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 	value = GetEnvUint64("TEST_ENV_UINT", 1024)
 	if value != 1024 {
 		t.Errorf("expected default value 1024 for invalid input, got %d", value)
@@ -82,7 +121,10 @@ func TestNewConfig(t *testing.T) {
 	}
 
 	for _, env := range envVars {
-		os.Unsetenv(env)
+		err := os.Unsetenv(env)
+		if err != nil {
+			t.Errorf("expected no error, got %v", err)
+		}
 	}
 
 	config := NewConfig()
@@ -100,22 +142,58 @@ func TestNewConfig(t *testing.T) {
 	}
 
 	// Test with custom values
-	os.Setenv("PORT", "9090")
-	os.Setenv("BASE_STORAGE_DIR", "/tmp/storage")
-	os.Setenv("UPLOAD_SIZE_LIMIT", "200000000")
-	os.Setenv("UPLOAD_TIMEOUT", "10")
-	os.Setenv("DB_HOST", "db.example.com")
-	os.Setenv("DB_PORT", "3307")
-	os.Setenv("DB_USER", "testuser")
-	os.Setenv("DB_PASSWORD", "testpass")
-	os.Setenv("DB_NAME", "testdb")
-	os.Setenv("DB_CONN_TIMEOUT", "20")
-	os.Setenv("WORKER_POOL_SIZE", "10")
+	err := os.Setenv("PORT", "9090")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	err = os.Setenv("BASE_STORAGE_DIR", "/tmp/storage")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	err = os.Setenv("UPLOAD_SIZE_LIMIT", "200000000")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	err = os.Setenv("UPLOAD_TIMEOUT", "10")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	err = os.Setenv("DB_HOST", "db.example.com")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	err = os.Setenv("DB_PORT", "3307")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	err = os.Setenv("DB_USER", "testuser")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	err = os.Setenv("DB_PASSWORD", "testpass")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	err = os.Setenv("DB_NAME", "testdb")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	err = os.Setenv("DB_CONN_TIMEOUT", "20")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	err = os.Setenv("WORKER_POOL_SIZE", "10")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
 
 	// Cleanup after test
 	defer func() {
 		for _, env := range envVars {
-			os.Unsetenv(env)
+			err := os.Unsetenv(env)
+			if err != nil {
+				t.Errorf("expected no error, got %v", err)
+			}
 		}
 	}()
 

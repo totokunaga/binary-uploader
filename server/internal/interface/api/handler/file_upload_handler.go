@@ -135,7 +135,12 @@ func (h *FileUploadHandler) Execute(ctx *gin.Context) {
 			sendErrorResponse(ctx, h.logger, e.NewInvalidInputError(err, "failed to create gzip reader"))
 			return
 		}
-		defer gzipReader.Close()
+		defer func() {
+			err := gzipReader.Close()
+			if err != nil {
+				sendErrorResponse(ctx, h.logger, e.NewContextError(err, "failed to close gzip reader"))
+			}
+		}()
 		reader = gzipReader
 	}
 

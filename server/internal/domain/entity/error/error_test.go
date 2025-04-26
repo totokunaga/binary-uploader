@@ -85,7 +85,7 @@ func TestCustomErrorInterface(t *testing.T) {
 	invalidErr := e.NewInvalidInputError(errors.New("test"), "invalid")
 	notFoundErr := e.NewNotFoundError(errors.New("test"), "notfound")
 
-	var customErrors []e.CustomError = []e.CustomError{
+	var customErrors = []e.CustomError{
 		mockErr,
 		contextErr,
 		dbErr,
