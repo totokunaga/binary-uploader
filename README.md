@@ -1,5 +1,3 @@
-# README
-
 # File Storage Server & CLI
 
 This project provides a simple file storage server accessible via a command-line interface (CLI).
