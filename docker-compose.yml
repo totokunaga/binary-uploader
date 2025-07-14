@@ -25,7 +25,7 @@ services:
   file-store:
     build:
       context: ./server
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: fs-store-server
     restart: always
     env_file: 
@@ -37,7 +37,7 @@ services:
     ports:
       - "${HOST_FILE_SERVER_PORT}:${PORT}"
     volumes:
-      - file-store-storage:/app/storage
+      - ./server:/app
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:${PORT}/health"]
       interval: 30s
@@ -52,7 +52,6 @@ services:
 
 volumes:
   mysql-data:
-  file-store-storage:
 
 networks:
   fs-network:

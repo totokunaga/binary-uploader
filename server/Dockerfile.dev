@@ -1,0 +1,28 @@
+# Use a suitable Go base image
+FROM golang:1.24-alpine
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Install Air
+# Option 1: Use go install (recommended)
+RUN go install github.com/air-verse/air@latest
+
+# Option 2: Download directly (alternative if go install has issues or you want to fix the version)
+# RUN curl -sSfL https://raw.githubusercontent.com/cosmtrek/air/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+
+# Copy go.mod and go.sum to cache Go module dependencies
+# This helps Docker cache dependencies, speeding up builds if go.mod/go.sum don't change
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the rest of your application code
+# This copy is mostly for the initial build/setup; live reloading will use volumes
+COPY . .
+
+# Expose the port your Go application listens on (e.g., 8080 for a web server)
+EXPOSE 8080
+
+# Set the command to run Air
+# Air will then build and run your Go application based on its .air.toml
+CMD ["air"]

@@ -26,7 +26,7 @@ help:
 	@echo "  make build-cli-all - Build the CLI for Windows, MacOS, and Linux (amd64/arm64)"
 
 up:
-	$(DOCKER_COMPOSE) up
+	$(DOCKER_COMPOSE) up --build
 
 up-d:
 	$(DOCKER_COMPOSE) up -d
